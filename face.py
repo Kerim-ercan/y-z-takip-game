@@ -171,24 +171,34 @@ class Player:
 
 class Platform:
     def __init__(self, x, y, width):
-        self.x = x
-        self.y = y
-        self.width = width
+        self.x, self.y, self.width = x, y, width
         self.height = 20
-        
-    def update(self):
-        self.x -= PLATFORM_SPEED
-        
-    def draw(self, screen):
-        # Platform surface (green grass-like)
-        pygame.draw.rect(screen, GREEN, (self.x, self.y, self.width, self.height))
-        # Platform base (darker)
-        pygame.draw.rect(screen, DARK_GREEN, (self.x, self.y + self.height, self.width, 30))
-        # Grass effect on top
+        # 1. Cached Surface oluşturma
+        total_height = self.height + 30
+        self.cached_surf = pygame.Surface((self.width, total_height), pygame.SRCALPHA)
+
+        # 2. Platform çizimini cached_surf üzerine yapma
+        # Üst zemin (yeşil)
+        pygame.draw.rect(self.cached_surf, GREEN, (0, 0, self.width, self.height))
+        # Alt tabaka (daha koyu)
+        pygame.draw.rect(self.cached_surf, DARK_GREEN, (0, self.height, self.width, 30))
+        # Çimen efektleri
         for i in range(0, self.width, 10):
-            pygame.draw.line(screen, DARK_GREEN, 
-                           (self.x + i, self.y), 
-                           (self.x + i + 3, self.y - 5), 2)
+            pygame.draw.line(
+                self.cached_surf, DARK_GREEN,
+                (i, 0), (i+3, -5), 2
+            )
+    def update(self):
+        # PLATFORM_SPEED sabitine göre sola kay
+        self.x -= PLATFORM_SPEED
+
+    def draw(self, screen):
+        screen.blit(self.cached_surf, (self.x, self.y))
+
+
+    def draw(self, screen):
+        # 3. Her frame cached yüzeyi ekrana blit etme
+        screen.blit(self.cached_surf, (self.x, self.y))
 
 class Obstacle:
     def __init__(self, x, y):
@@ -459,6 +469,10 @@ class Game:
         emotion_text = self.small_font.render(f"Emotion: {self.emotion_detector.current_emotion}", True, WHITE)
         score_text = self.font.render(f"Score: {self.score}", True, WHITE)
         distance_text = self.small_font.render(f"Distance: {self.distance//10}m", True, WHITE)
+        # Game.draw() içindeki UI kısmına ekleyin
+        fps = int(self.clock.get_fps())
+        fps_text = self.small_font.render(f"FPS: {fps}", True, WHITE)
+        self.screen.blit(fps_text, (SCREEN_WIDTH - 100, 10))  # Sağ üst köşeye
         
         self.screen.blit(emotion_text, (10, 10))
         self.screen.blit(score_text, (10, 35))
