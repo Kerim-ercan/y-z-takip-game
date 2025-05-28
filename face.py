@@ -146,6 +146,9 @@ class Player:
                 self.vel_y = JUMP_STRENGTH
                 self.jump_count += 1
                 self.on_ground = False
+        elif emotion == 'sad': # New condition for 'sad' emotion
+            # Move backward
+            self.vel_x = -PLAYER_SPEED
         
         # Store last emotion
         self.last_emotion = emotion
@@ -396,6 +399,8 @@ class Game:
             self.emotion_detector.current_emotion = 'surprise'
         elif keys[pygame.K_RIGHT] or keys[pygame.K_d]:
             self.emotion_detector.current_emotion = 'happy'
+        elif keys[pygame.K_LEFT] or keys[pygame.K_a]: # Added keyboard control for 'sad'
+            self.emotion_detector.current_emotion = 'sad'
         else:
             self.emotion_detector.current_emotion = 'neutral'
     
@@ -471,30 +476,75 @@ class Game:
             return
         
         # Determine if the game world should scroll (when player is moving forward)
-        world_should_move = (current_emotion == 'happy' or current_emotion == 'surprise')
+        # The world should move forward if happy/surprise, backward if sad, and stop if neutral.
+        # This logic needs to be adjusted based on the new 'sad' movement.
+        # If the player is moving backward (sad), the world should effectively move forward
+        # relative to the player's movement, but the platforms themselves will move
+        # based on the player's velocity.
         
-        # Update platforms, obstacles, collectibles, and clouds
-        # Remove objects that go off-screen
+        # Let's simplify: if player.vel_x is positive, world moves backward (normal scrolling)
+        # If player.vel_x is negative, world moves forward (reverse scrolling)
+        # If player.vel_x is zero, world stands still.
+        
+        # In a side-scroller, the world usually moves opposite to the player's intended direction.
+        # If player moves right, world moves left. If player moves left, world moves right.
+        # However, since the player's x position is capped at screen bounds, we need to
+        # decide if the *platforms* themselves should move.
+        
+        # For a Mario-like game, the world scrolls *left* when Mario moves *right*.
+        # If Mario moves *left*, the world *stops* scrolling left, or scrolls *right* if he's
+        # far enough left on the screen.
+        
+        # Let's adjust the world movement based on player's horizontal velocity.
+        # If player is moving right (happy/surprise), platforms move left (normal scrolling)
+        # If player is moving left (sad), platforms move right (reverse scrolling)
+        # If player is stationary (neutral), platforms stop.
+
+        # The current PLATFORM_SPEED is always subtracting from platform.x.
+        # We need to make it dynamic based on player's vel_x.
+
+        # Calculate effective platform movement speed
+        effective_platform_speed = 0
+        if current_emotion == 'happy' or current_emotion == 'surprise':
+            effective_platform_speed = -PLATFORM_SPEED # Platforms move left
+        elif current_emotion == 'sad':
+            effective_platform_speed = PLATFORM_SPEED # Platforms move right (to simulate player going left)
+        
+        # Update platforms
         for platform in self.platforms[:]:
-            platform.update(move_platforms=world_should_move)
-            if platform.x + platform.width < 0:
+            platform.x += effective_platform_speed # Apply dynamic speed
+            if platform.x + platform.width < 0 and effective_platform_speed < 0: # Remove if off left and moving left
+                self.platforms.remove(platform)
+            elif platform.x > SCREEN_WIDTH and effective_platform_speed > 0: # Remove if off right and moving right
                 self.platforms.remove(platform)
         
+        # Update obstacles
         for obstacle in self.obstacles[:]:
-            obstacle.update(move_obstacles=world_should_move)
-            if obstacle.x + obstacle.width < 0:
+            obstacle.x += effective_platform_speed
+            if obstacle.x + obstacle.width < 0 and effective_platform_speed < 0:
+                self.obstacles.remove(obstacle)
+            elif obstacle.x > SCREEN_WIDTH and effective_platform_speed > 0:
                 self.obstacles.remove(obstacle)
         
+        # Update collectibles
         for collectible in self.collectibles[:]:
-            collectible.update(move_collectibles=world_should_move)
-            if collectible.x + collectible.width < 0:
+            collectible.x += effective_platform_speed
+            if collectible.x + collectible.width < 0 and effective_platform_speed < 0:
+                self.collectibles.remove(collectible)
+            elif collectible.x > SCREEN_WIDTH and effective_platform_speed > 0:
                 self.collectibles.remove(collectible)
         
+        # Update clouds (clouds should always move left, but perhaps slower)
         for cloud in self.clouds:
-            cloud.update(move_clouds=world_should_move)
+            # Clouds always move left, regardless of player direction, but slower than platforms
+            cloud.x -= cloud.speed * 0.5 # Slower cloud movement
+            if cloud.x < -cloud.size:
+                cloud.x = SCREEN_WIDTH + random.randint(50, 200)
         
-        # Spawn new objects only when the world is moving
-        if world_should_move:
+        # Spawn new objects only when moving right (normal scrolling)
+        # Spawning logic needs to consider if the world is moving forward or backward
+        # For now, let's keep spawning only when player is moving forward (happy/surprise)
+        if current_emotion == 'happy' or current_emotion == 'surprise':
             self.spawn_platform()
             self.spawn_obstacle()
             self.spawn_collectible()
@@ -503,6 +553,10 @@ class Game:
             self.distance += PLATFORM_SPEED
             if self.distance % 100 == 0: # Award score for distance traveled
                 self.score += 1
+        elif current_emotion == 'sad':
+            # If moving backward, we might want to "un-spawn" or ensure no new objects appear
+            # or even have a limited "backtrack" area. For simplicity, no new spawns when sad.
+            pass # No new spawns when moving backward
     
     def draw_background(self):
         # Fill the background with Mario-like sky blue
@@ -545,10 +599,10 @@ class Game:
         
         # Draw instructions based on control method
         if not self.emotion_detector.model or not self.emotion_detector.webcam:
-            instruction_text = self.small_font.render("SPACE: Jump, RIGHT/D: Move, Others: Stop", True, BLACK)
+            instruction_text = self.small_font.render("SPACE: Jump, RIGHT/D: Move Forward, LEFT/A: Move Backward, Others: Stop", True, BLACK)
             self.screen.blit(instruction_text, (10, SCREEN_HEIGHT - 30))
         else:
-            instruction_text1 = self.small_font.render("NEUTRAL: Stop, HAPPY: Move Forward, SURPRISE: Jump", True, BLACK)
+            instruction_text1 = self.small_font.render("NEUTRAL: Stop, HAPPY: Move Forward, SURPRISE: Jump, SAD: Move Backward", True, BLACK)
             self.screen.blit(instruction_text1, (10, SCREEN_HEIGHT - 50))
             instruction_text2 = self.small_font.render("Look at the camera and show your emotions!", True, BLACK)
             self.screen.blit(instruction_text2, (10, SCREEN_HEIGHT - 30))
