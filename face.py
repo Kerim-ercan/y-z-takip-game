@@ -18,7 +18,7 @@ FPS = 60
 GRAVITY = 0.8
 JUMP_STRENGTH = -15
 PLATFORM_SPEED = 3
-PLAYER_SPEED = 0.5  # New constant for player movement
+PLAYER_SPEED = 2  # New constant for player movement
 
 # Colors
 SKY_BLUE = (135, 206, 250)
@@ -129,11 +129,14 @@ class Player:
         elif emotion == 'happy':
             # Move forward
             self.vel_x = PLAYER_SPEED
-        elif emotion == 'surprise' and emotion != self.last_emotion and self.jump_count < self.max_jumps:
-            # Jump only when emotion changes to surprise (prevents continuous jumping)
-            self.vel_y = JUMP_STRENGTH
-            self.jump_count += 1
-            self.on_ground = False
+        elif emotion == 'surprise':
+            # Move forward AND jump when surprised
+            self.vel_x = PLAYER_SPEED
+            if emotion != self.last_emotion and self.jump_count < self.max_jumps:
+                # Jump only when emotion changes to surprise (prevents continuous jumping)
+                self.vel_y = JUMP_STRENGTH
+                self.jump_count += 1
+                self.on_ground = False
         
         # Store last emotion
         self.last_emotion = emotion
@@ -422,8 +425,8 @@ class Game:
             self.game_over = True
             return
         
-        # Determine if world should move (only when player is moving forward)
-        world_should_move = (current_emotion == 'happy')
+        # Determine if world should move (when player is moving forward)
+        world_should_move = (current_emotion == 'happy' or current_emotion == 'surprise')
         
         # Update platforms
         for platform in self.platforms[:]:
