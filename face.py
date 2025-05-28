@@ -387,7 +387,7 @@ class Game:
         # Continuously detect emotion while the game is running
         while self.running:
             self.emotion_detector.detect_emotion()
-            time.sleep(0.1) # Small delay to prevent excessive CPU usage
+            # Removed time.sleep(0.1) to improve camera FPS and responsiveness
     
     def handle_keyboard_controls(self):
         # Fallback keyboard controls if emotion detection is not available
