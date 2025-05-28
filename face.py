@@ -244,6 +244,17 @@ class Collectible:
         pygame.draw.rect(screen, BLACK, (self.x + 17, bounce_y, 3, 20))
         pygame.draw.arc(screen, BLACK, (self.x + 15, bounce_y - 5, 10, 10), 0, math.pi, 3)
 
+def show_loading_screen(screen):
+    screen.fill((0, 0, 0))
+    font = pygame.font.Font(None, 48)
+    text = font.render("Loading…", True, (255, 255, 255))
+    # center the text
+    rect = text.get_rect(center=(SCREEN_WIDTH//2, SCREEN_HEIGHT//2))
+    screen.blit(text, rect)
+    pygame.display.flip()
+
+
+
 class Game:
     def __init__(self):
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
@@ -251,6 +262,8 @@ class Game:
         self.clock = pygame.time.Clock()
         self.running = True
         
+        # Show loading screen
+        show_loading_screen(self.screen)
         # Initialize game objects
         self.player = Player(100, 300)
         self.emotion_detector = EmotionDetector()
@@ -278,6 +291,37 @@ class Game:
             self.emotion_thread = threading.Thread(target=self.emotion_detection_loop)
             self.emotion_thread.daemon = True
             self.emotion_thread.start()
+
+    def show_main_menu(self):
+        title_font = pygame.font.Font(None, 72)
+        button_font = pygame.font.Font(None, 48)
+        selected = "start"
+
+        while True:
+            self.screen.fill(SKY_BLUE)
+
+            title_text = title_font.render("Emotion Platform Game", True, BLACK)
+            start_text = button_font.render("Press ENTER to Start", True, DARK_GREEN)
+            quit_text = button_font.render("Press ESC to Quit", True, DARK_GREEN)
+
+            self.screen.blit(title_text, (SCREEN_WIDTH//2 - title_text.get_width()//2, 150))
+            self.screen.blit(start_text, (SCREEN_WIDTH//2 - start_text.get_width()//2, 300))
+            self.screen.blit(quit_text, (SCREEN_WIDTH//2 - quit_text.get_width()//2, 370))
+
+            pygame.display.flip()
+
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    self.running = False
+                    pygame.quit()
+                    sys.exit()
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_RETURN:
+                        return
+                    elif event.key == pygame.K_ESCAPE:
+                        self.running = False
+                        pygame.quit()
+                        sys.exit()
     
     def emotion_detection_loop(self):
         while self.running:
@@ -455,6 +499,7 @@ class Game:
         self.game_over = False
     
     def run(self):
+        self.show_main_menu()
         while self.running:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
