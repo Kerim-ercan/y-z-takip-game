@@ -330,7 +330,12 @@ class Game:
         
         # Game objects
         # Initial platforms for a starting area
-        self.platforms = [Platform(0, 400, 200), Platform(250, 350, 150), Platform(450, 300, 200)]
+        # Create a long ground platform at the bottom
+        self.platforms = [Platform(0, SCREEN_HEIGHT - 50, SCREEN_WIDTH * 2)] # Long ground platform
+        # Add a few initial floating platforms for variety
+        self.platforms.append(Platform(SCREEN_WIDTH * 0.8, SCREEN_HEIGHT - 150, 150))
+        self.platforms.append(Platform(SCREEN_WIDTH * 1.2, SCREEN_HEIGHT - 250, 200))
+        
         self.obstacles = []
         self.clouds = [Cloud(random.randint(0, SCREEN_WIDTH), random.randint(50, 200), random.randint(40, 80)) for _ in range(5)]
         self.collectibles = []
@@ -397,10 +402,17 @@ class Game:
     def spawn_platform(self):
         # Spawn new platforms as the player progresses
         # Ensure there's always a new platform appearing on the right
-        if len(self.platforms) == 0 or self.platforms[-1].x < SCREEN_WIDTH - 150: # Adjust spacing for platforms
-            x = SCREEN_WIDTH + random.randint(0, 50) # Randomize starting x slightly
-            y = random.randint(250, 500) # Keep platforms within a reasonable height range
-            width = random.randint(100, 250) # Vary platform width
+        if len(self.platforms) == 0 or self.platforms[-1].x < SCREEN_WIDTH - 100: # Adjust spacing
+            x = SCREEN_WIDTH + random.randint(0, 100) # Randomize starting x slightly
+            
+            # Decide if it's a ground extension or a floating platform
+            if random.random() < 0.6: # 60% chance for ground extension
+                y = SCREEN_HEIGHT - 50 # Consistent ground level
+                width = random.randint(150, 300) # Longer ground segments
+            else: # 40% chance for floating platform
+                y = random.randint(SCREEN_HEIGHT - 250, SCREEN_HEIGHT - 100) # Floating platforms above ground
+                width = random.randint(80, 200) # Shorter floating platforms
+            
             self.platforms.append(Platform(x, y, width))
     
     def spawn_obstacle(self):
@@ -561,7 +573,11 @@ class Game:
     def restart_game(self):
         # Reset all game elements to their initial state
         self.player = Player(100, 300)
-        self.platforms = [Platform(0, 400, 200), Platform(250, 350, 150), Platform(450, 300, 200)]
+        # Reset initial platforms for a fresh start
+        self.platforms = [Platform(0, SCREEN_HEIGHT - 50, SCREEN_WIDTH * 2)]
+        self.platforms.append(Platform(SCREEN_WIDTH * 0.8, SCREEN_HEIGHT - 150, 150))
+        self.platforms.append(Platform(SCREEN_WIDTH * 1.2, SCREEN_HEIGHT - 250, 200))
+
         self.obstacles = []
         self.collectibles = []
         self.score = 0
