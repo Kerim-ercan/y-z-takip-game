@@ -18,6 +18,7 @@ FPS = 60
 GRAVITY = 0.8
 JUMP_STRENGTH = -15
 PLATFORM_SPEED = 3
+PLAYER_SPEED = 0.5  # New constant for player movement
 
 # Colors
 SKY_BLUE = (135, 206, 250)
@@ -118,19 +119,37 @@ class Player:
         self.on_ground = False
         self.jump_count = 0
         self.max_jumps = 2
+        self.last_emotion = 'neutral'  # Track last emotion to prevent continuous jumping
         
     def update(self, emotion, platforms):
-        # Handle emotion-based jumping
-        if emotion in ['surprise', 'happy'] and self.jump_count < self.max_jumps:
+        # Handle emotion-based controls
+        if emotion == 'neutral':
+            # Stop horizontal movement
+            self.vel_x = 0
+        elif emotion == 'happy':
+            # Move forward
+            self.vel_x = PLAYER_SPEED
+        elif emotion == 'surprise' and emotion != self.last_emotion and self.jump_count < self.max_jumps:
+            # Jump only when emotion changes to surprise (prevents continuous jumping)
             self.vel_y = JUMP_STRENGTH
             self.jump_count += 1
             self.on_ground = False
+        
+        # Store last emotion
+        self.last_emotion = emotion
         
         # Apply gravity
         self.vel_y += GRAVITY
         
         # Update position
+        self.x += self.vel_x
         self.y += self.vel_y
+        
+        # Keep player within screen bounds horizontally
+        if self.x < 0:
+            self.x = 0
+        elif self.x + self.width > SCREEN_WIDTH:
+            self.x = SCREEN_WIDTH - self.width
         
         # Platform collision
         self.on_ground = False
@@ -173,31 +192,28 @@ class Platform:
     def __init__(self, x, y, width):
         self.x, self.y, self.width = x, y, width
         self.height = 20
-        # 1. Cached Surface oluşturma
+        # Cached Surface creation
         total_height = self.height + 30
         self.cached_surf = pygame.Surface((self.width, total_height), pygame.SRCALPHA)
 
-        # 2. Platform çizimini cached_surf üzerine yapma
-        # Üst zemin (yeşil)
+        # Draw platform on cached surface
+        # Top ground (green)
         pygame.draw.rect(self.cached_surf, GREEN, (0, 0, self.width, self.height))
-        # Alt tabaka (daha koyu)
+        # Bottom layer (darker)
         pygame.draw.rect(self.cached_surf, DARK_GREEN, (0, self.height, self.width, 30))
-        # Çimen efektleri
+        # Grass effects
         for i in range(0, self.width, 10):
             pygame.draw.line(
                 self.cached_surf, DARK_GREEN,
                 (i, 0), (i+3, -5), 2
             )
-    def update(self):
-        # PLATFORM_SPEED sabitine göre sola kay
-        self.x -= PLATFORM_SPEED
+    
+    def update(self, move_platforms=True):
+        # Only move platforms when specified (for static world when player stops)
+        if move_platforms:
+            self.x -= PLATFORM_SPEED
 
     def draw(self, screen):
-        screen.blit(self.cached_surf, (self.x, self.y))
-
-
-    def draw(self, screen):
-        # 3. Her frame cached yüzeyi ekrana blit etme
         screen.blit(self.cached_surf, (self.x, self.y))
 
 class Obstacle:
@@ -207,8 +223,9 @@ class Obstacle:
         self.width = 25
         self.height = 40
         
-    def update(self):
-        self.x -= PLATFORM_SPEED
+    def update(self, move_obstacles=True):
+        if move_obstacles:
+            self.x -= PLATFORM_SPEED
         
     def draw(self, screen):
         # Draw spike obstacle
@@ -224,10 +241,11 @@ class Cloud:
         self.size = size
         self.speed = random.uniform(0.5, 1.5)
         
-    def update(self):
-        self.x -= self.speed
-        if self.x < -self.size:
-            self.x = SCREEN_WIDTH + random.randint(50, 200)
+    def update(self, move_clouds=True):
+        if move_clouds:
+            self.x -= self.speed
+            if self.x < -self.size:
+                self.x = SCREEN_WIDTH + random.randint(50, 200)
         
     def draw(self, screen):
         # Draw fluffy cloud
@@ -243,8 +261,9 @@ class Collectible:
         self.height = 20
         self.bounce = 0
         
-    def update(self):
-        self.x -= PLATFORM_SPEED
+    def update(self, move_collectibles=True):
+        if move_collectibles:
+            self.x -= PLATFORM_SPEED
         self.bounce += 0.2
         
     def draw(self, screen):
@@ -262,8 +281,6 @@ def show_loading_screen(screen):
     rect = text.get_rect(center=(SCREEN_WIDTH//2, SCREEN_HEIGHT//2))
     screen.blit(text, rect)
     pygame.display.flip()
-
-
 
 class Game:
     def __init__(self):
@@ -305,7 +322,6 @@ class Game:
     def show_main_menu(self):
         title_font = pygame.font.Font(None, 72)
         button_font = pygame.font.Font(None, 48)
-        selected = "start"
 
         while True:
             self.screen.fill(SKY_BLUE)
@@ -340,8 +356,10 @@ class Game:
     
     def handle_keyboard_controls(self):
         keys = pygame.key.get_pressed()
-        if keys[pygame.K_SPACE] or keys[pygame.K_UP]:
+        if keys[pygame.K_SPACE]:
             self.emotion_detector.current_emotion = 'surprise'
+        elif keys[pygame.K_RIGHT] or keys[pygame.K_d]:
+            self.emotion_detector.current_emotion = 'happy'
         else:
             self.emotion_detector.current_emotion = 'neutral'
     
@@ -392,8 +410,10 @@ class Game:
         if not self.emotion_detector.model or not self.emotion_detector.webcam:
             self.handle_keyboard_controls()
         
+        current_emotion = self.emotion_detector.current_emotion
+        
         # Update player
-        if not self.player.update(self.emotion_detector.current_emotion, self.platforms):
+        if not self.player.update(current_emotion, self.platforms):
             self.game_over = True
             return
         
@@ -402,37 +422,41 @@ class Game:
             self.game_over = True
             return
         
+        # Determine if world should move (only when player is moving forward)
+        world_should_move = (current_emotion == 'happy')
+        
         # Update platforms
         for platform in self.platforms[:]:
-            platform.update()
+            platform.update(move_platforms=world_should_move)
             if platform.x + platform.width < 0:
                 self.platforms.remove(platform)
         
         # Update obstacles
         for obstacle in self.obstacles[:]:
-            obstacle.update()
+            obstacle.update(move_obstacles=world_should_move)
             if obstacle.x + obstacle.width < 0:
                 self.obstacles.remove(obstacle)
         
         # Update collectibles
         for collectible in self.collectibles[:]:
-            collectible.update()
+            collectible.update(move_collectibles=world_should_move)
             if collectible.x + collectible.width < 0:
                 self.collectibles.remove(collectible)
         
         # Update clouds
         for cloud in self.clouds:
-            cloud.update()
+            cloud.update(move_clouds=world_should_move)
         
-        # Spawn new objects
-        self.spawn_platform()
-        self.spawn_obstacle()
-        self.spawn_collectible()
-        
-        # Update game state
-        self.distance += PLATFORM_SPEED
-        if self.distance % 100 == 0:
-            self.score += 1
+        # Spawn new objects only when moving
+        if world_should_move:
+            self.spawn_platform()
+            self.spawn_obstacle()
+            self.spawn_collectible()
+            
+            # Update game state
+            self.distance += PLATFORM_SPEED
+            if self.distance % 100 == 0:
+                self.score += 1
     
     def draw_background(self):
         # Gradient sky
@@ -469,10 +493,10 @@ class Game:
         emotion_text = self.small_font.render(f"Emotion: {self.emotion_detector.current_emotion}", True, WHITE)
         score_text = self.font.render(f"Score: {self.score}", True, WHITE)
         distance_text = self.small_font.render(f"Distance: {self.distance//10}m", True, WHITE)
-        # Game.draw() içindeki UI kısmına ekleyin
+        
         fps = int(self.clock.get_fps())
         fps_text = self.small_font.render(f"FPS: {fps}", True, WHITE)
-        self.screen.blit(fps_text, (SCREEN_WIDTH - 100, 10))  # Sağ üst köşeye
+        self.screen.blit(fps_text, (SCREEN_WIDTH - 100, 10))
         
         self.screen.blit(emotion_text, (10, 10))
         self.screen.blit(score_text, (10, 35))
@@ -480,11 +504,13 @@ class Game:
         
         # Draw instructions
         if not self.emotion_detector.model or not self.emotion_detector.webcam:
-            instruction_text = self.small_font.render("Press SPACE to jump!", True, WHITE)
+            instruction_text = self.small_font.render("SPACE: Jump, RIGHT/D: Move, Others: Stop", True, WHITE)
             self.screen.blit(instruction_text, (10, SCREEN_HEIGHT - 30))
         else:
-            instruction_text = self.small_font.render("Show SURPRISE or HAPPY emotion to jump!", True, WHITE)
-            self.screen.blit(instruction_text, (10, SCREEN_HEIGHT - 30))
+            instruction_text1 = self.small_font.render("NEUTRAL: Stop, HAPPY: Move Forward, SURPRISE: Jump", True, WHITE)
+            self.screen.blit(instruction_text1, (10, SCREEN_HEIGHT - 50))
+            instruction_text2 = self.small_font.render("Look at the camera and show your emotions!", True, WHITE)
+            self.screen.blit(instruction_text2, (10, SCREEN_HEIGHT - 30))
         
         # Game over screen
         if self.game_over:
