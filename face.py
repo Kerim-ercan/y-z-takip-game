@@ -18,18 +18,20 @@ FPS = 60
 GRAVITY = 0.8
 JUMP_STRENGTH = -15
 PLATFORM_SPEED = 3
-PLAYER_SPEED = 2  # New constant for player movement
+PLAYER_SPEED = 4  # Increased player speed for a more dynamic feel
 
-# Colors
-SKY_BLUE = (135, 206, 250)
-TEAL = (0, 128, 128)
+# Colors (Mario-like palette)
+MARIO_SKY_BLUE = (92, 148, 252) # Brighter blue for sky
+MARIO_GROUND_BROWN = (176, 128, 64) # Brown for ground blocks
+MARIO_GROUND_TOP_GREEN = (0, 168, 0) # Green for top of ground blocks
 WHITE = (255, 255, 255)
-GREEN = (34, 139, 34)
-DARK_GREEN = (0, 100, 0)
-YELLOW = (255, 215, 0)
-PINK = (255, 192, 203)
+MARIO_RED = (252, 0, 0) # Mario's hat and shirt
+MARIO_BLUE = (0, 0, 252) # Mario's overalls
+MARIO_SKIN = (255, 204, 153) # Mario's skin color
+MARIO_YELLOW = (255, 255, 0) # Coins/Stars
 BLACK = (0, 0, 0)
-BLUE = (100, 150, 255)
+GOOMBA_BROWN = (160, 82, 45) # Goomba body color
+GOOMBA_FEET = (80, 40, 20) # Goomba feet color
 
 class EmotionDetector:
     def __init__(self):
@@ -39,15 +41,19 @@ class EmotionDetector:
         
     def setup_model(self):
         try:
+            # Load emotion detection model from the provided JSON and H5 files
             json_file = open("emotiondetector.json", "r")
             model_json = json_file.read()
             json_file.close()
             self.model = model_from_json(model_json)
-            self.model.load_weights("emotiondetector.h5")
+            # Note: emotiondetector.h5 is expected to be in the same directory for this to work
+            self.model.load_weights("emotiondetector.h5") 
             
+            # Load Haar cascade for face detection
             haar_file = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
             self.face_cascade = cv2.CascadeClassifier(haar_file)
             
+            # Define emotion labels
             self.labels = {0: 'angry', 1: 'disgust', 2: 'fear', 3: 'happy', 
                           4: 'neutral', 5: 'sad', 6: 'surprise'}
             print("Emotion detection model loaded successfully!")
@@ -57,6 +63,7 @@ class EmotionDetector:
             self.model = None
     
     def setup_camera(self):
+        # Initialize webcam if model loaded successfully
         if self.model:
             try:
                 self.webcam = cv2.VideoCapture(0)
@@ -68,11 +75,13 @@ class EmotionDetector:
                 self.webcam = None
     
     def extract_features(self, image):
+        # Preprocess image for model prediction
         feature = np.array(image)
         feature = feature.reshape(1, 48, 48, 1)
         return feature / 255.0
     
     def detect_emotion(self):
+        # If model or webcam not available, use current emotion
         if not self.model or not self.webcam:
             return self.current_emotion
             
@@ -86,22 +95,22 @@ class EmotionDetector:
             
             for (x, y, w, h) in faces:
                 face_img = gray[y:y+h, x:x+w]
-                cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2)
+                cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2) # Draw rectangle around face
                 
-                face_img = cv2.resize(face_img, (48, 48))
+                face_img = cv2.resize(face_img, (48, 48)) # Resize face image to 48x48
                 img_features = self.extract_features(face_img)
-                prediction = self.model.predict(img_features, verbose=0)
-                emotion_label = self.labels[prediction.argmax()]
+                prediction = self.model.predict(img_features, verbose=0) # Predict emotion
+                emotion_label = self.labels[prediction.argmax()] # Get emotion label
                 
-                cv2.putText(frame, emotion_label, (x-10, y-10),
+                cv2.putText(frame, emotion_label, (x-10, y-10), # Display emotion on frame
                            cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0))
                 
                 self.current_emotion = emotion_label
-                break
+                break # Process only the first detected face
             
-            small_frame = cv2.resize(frame, (200, 150))
-            cv2.imshow("Emotion", small_frame)
-            cv2.waitKey(1)
+            small_frame = cv2.resize(frame, (200, 150)) # Resize frame for display
+            cv2.imshow("Emotion", small_frame) # Show the frame
+            cv2.waitKey(1) # Wait for a key press
             
         except Exception as e:
             print(f"Error in emotion detection: {e}")
@@ -113,7 +122,7 @@ class Player:
         self.x = x
         self.y = y
         self.width = 30
-        self.height = 35
+        self.height = 40
         self.vel_x = 0
         self.vel_y = 0
         self.on_ground = False
@@ -157,59 +166,62 @@ class Player:
         # Platform collision
         self.on_ground = False
         for platform in platforms:
+            # Check if player is colliding with platform from above
             if (self.x + self.width > platform.x and 
                 self.x < platform.x + platform.width and
                 self.y + self.height > platform.y and 
-                self.y + self.height < platform.y + platform.height + 20 and
-                self.vel_y > 0):
+                self.y + self.height < platform.y + platform.height + 20 and # Small buffer for collision detection
+                self.vel_y > 0): # Only if falling
                 
-                self.y = platform.y - self.height
-                self.vel_y = 0
-                self.on_ground = True
-                self.jump_count = 0
+                self.y = platform.y - self.height # Snap player to top of platform
+                self.vel_y = 0 # Stop vertical movement
+                self.on_ground = True # Player is on ground
+                self.jump_count = 0 # Reset jump count
         
-        # Screen boundaries
+        # Screen boundaries (game over if player falls off screen)
         if self.y > SCREEN_HEIGHT:
             return False  # Game over
         
         return True
     
     def draw(self, screen):
-        # Draw cute character (like the bird in the image)
-        # Body
-        pygame.draw.ellipse(screen, WHITE, (self.x, self.y + 10, self.width, self.height - 15))
-        # Head
-        pygame.draw.circle(screen, WHITE, (int(self.x + self.width//2), int(self.y + 8)), 12)
-        # Beak
-        points = [(self.x + self.width//2 + 8, self.y + 8), 
-                 (self.x + self.width//2 + 15, self.y + 8),
-                 (self.x + self.width//2 + 12, self.y + 12)]
-        pygame.draw.polygon(screen, YELLOW, points)
-        # Eyes
-        pygame.draw.circle(screen, BLACK, (int(self.x + self.width//2 - 3), int(self.y + 5)), 2)
-        pygame.draw.circle(screen, BLACK, (int(self.x + self.width//2 + 3), int(self.y + 5)), 2)
-        # Wing
-        pygame.draw.ellipse(screen, PINK, (self.x + 5, self.y + 12, 15, 8))
+        # Draw Mario-like character
+        
+        # Body (Overalls - Blue)
+        pygame.draw.rect(screen, MARIO_BLUE, (self.x + 5, self.y + 15, self.width - 10, self.height - 15), border_radius=3)
+        # Shirt (Red)
+        pygame.draw.rect(screen, MARIO_RED, (self.x, self.y + 10, self.width, self.height - 20), border_radius=3)
+        # Head (Skin color)
+        pygame.draw.circle(screen, MARIO_SKIN, (int(self.x + self.width//2), int(self.y + 8)), 10)
+        # Hat (Red)
+        pygame.draw.rect(screen, MARIO_RED, (self.x + 2, self.y, self.width - 4, 10), border_radius=3)
+        pygame.draw.rect(screen, MARIO_RED, (self.x - 5, self.y + 5, 15, 5), border_radius=2) # Hat brim
+        # Eyes (Black)
+        pygame.draw.circle(screen, BLACK, (int(self.x + self.width//2 - 4), int(self.y + 7)), 2)
+        pygame.draw.circle(screen, BLACK, (int(self.x + self.width//2 + 4), int(self.y + 7)), 2)
+        # Mustache (Brown)
+        pygame.draw.line(screen, MARIO_GROUND_BROWN, (self.x + self.width//2 - 5, self.y + 12), (self.x + self.width//2 + 5, self.y + 12), 2)
+        # Shoes (Brown)
+        pygame.draw.rect(screen, MARIO_GROUND_BROWN, (self.x + 2, self.y + self.height - 5, self.width - 4, 5), border_radius=2)
 
 class Platform:
     def __init__(self, x, y, width):
         self.x, self.y, self.width = x, y, width
         self.height = 20
-        # Cached Surface creation
+        # Cached Surface creation for performance
         total_height = self.height + 30
         self.cached_surf = pygame.Surface((self.width, total_height), pygame.SRCALPHA)
 
-        # Draw platform on cached surface
+        # Draw platform on cached surface (Mario-like block)
         # Top ground (green)
-        pygame.draw.rect(self.cached_surf, GREEN, (0, 0, self.width, self.height))
-        # Bottom layer (darker)
-        pygame.draw.rect(self.cached_surf, DARK_GREEN, (0, self.height, self.width, 30))
-        # Grass effects
+        pygame.draw.rect(self.cached_surf, MARIO_GROUND_TOP_GREEN, (0, 0, self.width, self.height))
+        # Bottom layer (brown)
+        pygame.draw.rect(self.cached_surf, MARIO_GROUND_BROWN, (0, self.height, self.width, 30))
+        # Add some texture/lines for block appearance
         for i in range(0, self.width, 10):
-            pygame.draw.line(
-                self.cached_surf, DARK_GREEN,
-                (i, 0), (i+3, -5), 2
-            )
+            pygame.draw.line(self.cached_surf, (150, 100, 50), (i, self.height), (i, self.height + 30), 1)
+        for i in range(0, 30, 10):
+            pygame.draw.line(self.cached_surf, (150, 100, 50), (0, self.height + i), (self.width, self.height + i), 1)
     
     def update(self, move_platforms=True):
         # Only move platforms when specified (for static world when player stops)
@@ -223,19 +235,24 @@ class Obstacle:
     def __init__(self, x, y):
         self.x = x
         self.y = y
-        self.width = 25
-        self.height = 40
+        self.width = 30
+        self.height = 30
         
     def update(self, move_obstacles=True):
         if move_obstacles:
             self.x -= PLATFORM_SPEED
         
     def draw(self, screen):
-        # Draw spike obstacle
-        points = [(self.x, self.y + self.height),
-                 (self.x + self.width//2, self.y),
-                 (self.x + self.width, self.y + self.height)]
-        pygame.draw.polygon(screen, BLACK, points)
+        # Draw a simple Goomba-like obstacle
+        # Body (brown mushroom shape)
+        pygame.draw.ellipse(screen, GOOMBA_BROWN, (self.x, self.y, self.width, self.height))
+        # Feet (darker brown)
+        pygame.draw.rect(screen, GOOMBA_FEET, (self.x + 5, self.y + self.height - 5, self.width - 10, 5))
+        # Eyes (white with black pupils)
+        pygame.draw.circle(screen, WHITE, (int(self.x + self.width * 0.3), int(self.y + self.height * 0.3)), 3)
+        pygame.draw.circle(screen, BLACK, (int(self.x + self.width * 0.3), int(self.y + self.height * 0.3)), 1)
+        pygame.draw.circle(screen, WHITE, (int(self.x + self.width * 0.7), int(self.y + self.height * 0.3)), 3)
+        pygame.draw.circle(screen, BLACK, (int(self.x + self.width * 0.7), int(self.y + self.height * 0.3)), 1)
 
 class Cloud:
     def __init__(self, x, y, size):
@@ -267,14 +284,27 @@ class Collectible:
     def update(self, move_collectibles=True):
         if move_collectibles:
             self.x -= PLATFORM_SPEED
-        self.bounce += 0.2
+        self.bounce += 0.1 # Slower bounce for coin/star
         
     def draw(self, screen):
-        # Draw musical note (like in the image)
-        bounce_y = self.y + math.sin(self.bounce) * 3
-        pygame.draw.circle(screen, YELLOW, (int(self.x + 10), int(bounce_y + 15)), 8)
-        pygame.draw.rect(screen, BLACK, (self.x + 17, bounce_y, 3, 20))
-        pygame.draw.arc(screen, BLACK, (self.x + 15, bounce_y - 5, 10, 10), 0, math.pi, 3)
+        # Draw a spinning coin/star
+        bounce_y = self.y + math.sin(self.bounce) * 5 # More pronounced bounce
+        
+        # Draw a star
+        points = []
+        for i in range(5):
+            angle = math.pi/2 + i * (2 * math.pi / 5)
+            x_outer = self.x + self.width/2 + self.width/2 * math.cos(angle)
+            y_outer = bounce_y + self.height/2 - self.height/2 * math.sin(angle)
+            points.append((x_outer, y_outer))
+            
+            angle_inner = angle + math.pi / 5
+            x_inner = self.x + self.width/2 + self.width/4 * math.cos(angle_inner)
+            y_inner = bounce_y + self.height/2 - self.height/4 * math.sin(angle_inner)
+            points.append((x_inner, y_inner))
+            
+        pygame.draw.polygon(screen, MARIO_YELLOW, points)
+        pygame.draw.polygon(screen, BLACK, points, 1) # Outline
 
 def show_loading_screen(screen):
     screen.fill((0, 0, 0))
@@ -288,7 +318,7 @@ def show_loading_screen(screen):
 class Game:
     def __init__(self):
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-        pygame.display.set_caption("Emotion Platform Game")
+        pygame.display.set_caption("Mario-like Emotion Platformer") # Updated title
         self.clock = pygame.time.Clock()
         self.running = True
         
@@ -299,6 +329,7 @@ class Game:
         self.emotion_detector = EmotionDetector()
         
         # Game objects
+        # Initial platforms for a starting area
         self.platforms = [Platform(0, 400, 200), Platform(250, 350, 150), Platform(450, 300, 200)]
         self.obstacles = []
         self.clouds = [Cloud(random.randint(0, SCREEN_WIDTH), random.randint(50, 200), random.randint(40, 80)) for _ in range(5)]
@@ -311,15 +342,10 @@ class Game:
         self.font = pygame.font.Font(None, 36)
         self.small_font = pygame.font.Font(None, 24)
         
-        # Timers
-        self.platform_timer = 0
-        self.obstacle_timer = 0
-        self.collectible_timer = 0
-        
-        # Start emotion detection
+        # Start emotion detection in a separate thread
         if self.emotion_detector.model and self.emotion_detector.webcam:
             self.emotion_thread = threading.Thread(target=self.emotion_detection_loop)
-            self.emotion_thread.daemon = True
+            self.emotion_thread.daemon = True # Daemonize thread so it exits with main program
             self.emotion_thread.start()
 
     def show_main_menu(self):
@@ -327,11 +353,11 @@ class Game:
         button_font = pygame.font.Font(None, 48)
 
         while True:
-            self.screen.fill(SKY_BLUE)
+            self.screen.fill(MARIO_SKY_BLUE) # Use Mario sky color for menu
 
-            title_text = title_font.render("Emotion Platform Game", True, BLACK)
-            start_text = button_font.render("Press ENTER to Start", True, DARK_GREEN)
-            quit_text = button_font.render("Press ESC to Quit", True, DARK_GREEN)
+            title_text = title_font.render("Mario-like Emotion Platformer", True, BLACK)
+            start_text = button_font.render("Press ENTER to Start", True, MARIO_GROUND_TOP_GREEN)
+            quit_text = button_font.render("Press ESC to Quit", True, MARIO_GROUND_TOP_GREEN)
 
             self.screen.blit(title_text, (SCREEN_WIDTH//2 - title_text.get_width()//2, 150))
             self.screen.blit(start_text, (SCREEN_WIDTH//2 - start_text.get_width()//2, 300))
@@ -353,11 +379,13 @@ class Game:
                         sys.exit()
     
     def emotion_detection_loop(self):
+        # Continuously detect emotion while the game is running
         while self.running:
             self.emotion_detector.detect_emotion()
-            time.sleep(0.1)
+            time.sleep(0.1) # Small delay to prevent excessive CPU usage
     
     def handle_keyboard_controls(self):
+        # Fallback keyboard controls if emotion detection is not available
         keys = pygame.key.get_pressed()
         if keys[pygame.K_SPACE]:
             self.emotion_detector.current_emotion = 'surprise'
@@ -367,25 +395,30 @@ class Game:
             self.emotion_detector.current_emotion = 'neutral'
     
     def spawn_platform(self):
-        if len(self.platforms) == 0 or self.platforms[-1].x < SCREEN_WIDTH - 200:
-            x = SCREEN_WIDTH
-            y = random.randint(200, 500)
-            width = random.randint(100, 200)
+        # Spawn new platforms as the player progresses
+        # Ensure there's always a new platform appearing on the right
+        if len(self.platforms) == 0 or self.platforms[-1].x < SCREEN_WIDTH - 150: # Adjust spacing for platforms
+            x = SCREEN_WIDTH + random.randint(0, 50) # Randomize starting x slightly
+            y = random.randint(250, 500) # Keep platforms within a reasonable height range
+            width = random.randint(100, 250) # Vary platform width
             self.platforms.append(Platform(x, y, width))
     
     def spawn_obstacle(self):
+        # Spawn obstacles on existing platforms
         for platform in self.platforms:
-            if (platform.x > SCREEN_WIDTH - 100 and platform.x < SCREEN_WIDTH - 50 and
-                random.random() < 0.3):
-                self.obstacles.append(Obstacle(platform.x + random.randint(20, platform.width - 40), 
-                                             platform.y - 40))
+            # Only spawn on platforms that are visible and not too close to the edge
+            if (platform.x > SCREEN_WIDTH - 200 and platform.x < SCREEN_WIDTH - 100 and
+                random.random() < 0.01): # Lower chance to spawn obstacles
+                self.obstacles.append(Obstacle(platform.x + random.randint(20, platform.width - 50), 
+                                             platform.y - 30)) # Position above platform
     
     def spawn_collectible(self):
+        # Spawn collectibles on existing platforms
         for platform in self.platforms:
-            if (platform.x > SCREEN_WIDTH - 150 and platform.x < SCREEN_WIDTH - 100 and
-                random.random() < 0.2):
-                self.collectibles.append(Collectible(platform.x + random.randint(10, platform.width - 30), 
-                                                   platform.y - 30))
+            if (platform.x > SCREEN_WIDTH - 250 and platform.x < SCREEN_WIDTH - 150 and
+                random.random() < 0.05): # Higher chance for collectibles
+                self.collectibles.append(Collectible(platform.x + random.randint(10, platform.width - 40), 
+                                                   platform.y - 40)) # Position above platform
     
     def check_collisions(self):
         player_rect = pygame.Rect(self.player.x, self.player.y, self.player.width, self.player.height)
@@ -394,14 +427,14 @@ class Game:
         for obstacle in self.obstacles:
             obstacle_rect = pygame.Rect(obstacle.x, obstacle.y, obstacle.width, obstacle.height)
             if player_rect.colliderect(obstacle_rect):
-                return False
+                return False # Game over if collides with obstacle
         
         # Check collectible collisions
-        for collectible in self.collectibles[:]:
+        for collectible in self.collectibles[:]: # Iterate over a copy to allow removal
             collectible_rect = pygame.Rect(collectible.x, collectible.y, collectible.width, collectible.height)
             if player_rect.colliderect(collectible_rect):
-                self.collectibles.remove(collectible)
-                self.score += 10
+                self.collectibles.remove(collectible) # Remove collected item
+                self.score += 10 # Increase score
         
         return True
     
@@ -409,66 +442,59 @@ class Game:
         if self.game_over:
             return
         
-        # Handle keyboard as backup
+        # Handle keyboard as backup if emotion detection is not active
         if not self.emotion_detector.model or not self.emotion_detector.webcam:
             self.handle_keyboard_controls()
         
         current_emotion = self.emotion_detector.current_emotion
         
-        # Update player
+        # Update player position and check for game over condition
         if not self.player.update(current_emotion, self.platforms):
             self.game_over = True
             return
         
-        # Check collisions
+        # Check for collisions with obstacles and collectibles
         if not self.check_collisions():
             self.game_over = True
             return
         
-        # Determine if world should move (when player is moving forward)
+        # Determine if the game world should scroll (when player is moving forward)
         world_should_move = (current_emotion == 'happy' or current_emotion == 'surprise')
         
-        # Update platforms
+        # Update platforms, obstacles, collectibles, and clouds
+        # Remove objects that go off-screen
         for platform in self.platforms[:]:
             platform.update(move_platforms=world_should_move)
             if platform.x + platform.width < 0:
                 self.platforms.remove(platform)
         
-        # Update obstacles
         for obstacle in self.obstacles[:]:
             obstacle.update(move_obstacles=world_should_move)
             if obstacle.x + obstacle.width < 0:
                 self.obstacles.remove(obstacle)
         
-        # Update collectibles
         for collectible in self.collectibles[:]:
             collectible.update(move_collectibles=world_should_move)
             if collectible.x + collectible.width < 0:
                 self.collectibles.remove(collectible)
         
-        # Update clouds
         for cloud in self.clouds:
             cloud.update(move_clouds=world_should_move)
         
-        # Spawn new objects only when moving
+        # Spawn new objects only when the world is moving
         if world_should_move:
             self.spawn_platform()
             self.spawn_obstacle()
             self.spawn_collectible()
             
-            # Update game state
+            # Update game state (distance and score)
             self.distance += PLATFORM_SPEED
-            if self.distance % 100 == 0:
+            if self.distance % 100 == 0: # Award score for distance traveled
                 self.score += 1
     
     def draw_background(self):
-        # Gradient sky
-        for y in range(SCREEN_HEIGHT):
-            color_ratio = y / SCREEN_HEIGHT
-            r = int(135 * (1 - color_ratio) + 0 * color_ratio)
-            g = int(206 * (1 - color_ratio) + 128 * color_ratio)
-            b = int(250 * (1 - color_ratio) + 128 * color_ratio)
-            pygame.draw.line(self.screen, (r, g, b), (0, y), (SCREEN_WIDTH, y))
+        # Fill the background with Mario-like sky blue
+        self.screen.fill(MARIO_SKY_BLUE)
     
     def draw(self):
         self.draw_background()
@@ -492,33 +518,33 @@ class Game:
         # Draw player
         self.player.draw(self.screen)
         
-        # Draw UI
-        emotion_text = self.small_font.render(f"Emotion: {self.emotion_detector.current_emotion}", True, WHITE)
-        score_text = self.font.render(f"Score: {self.score}", True, WHITE)
-        distance_text = self.small_font.render(f"Distance: {self.distance//10}m", True, WHITE)
+        # Draw UI elements (emotion, score, distance, FPS)
+        emotion_text = self.small_font.render(f"Emotion: {self.emotion_detector.current_emotion}", True, BLACK)
+        score_text = self.font.render(f"Score: {self.score}", True, BLACK)
+        distance_text = self.small_font.render(f"Distance: {self.distance//10}m", True, BLACK)
         
         fps = int(self.clock.get_fps())
-        fps_text = self.small_font.render(f"FPS: {fps}", True, WHITE)
+        fps_text = self.small_font.render(f"FPS: {fps}", True, BLACK)
         self.screen.blit(fps_text, (SCREEN_WIDTH - 100, 10))
         
         self.screen.blit(emotion_text, (10, 10))
         self.screen.blit(score_text, (10, 35))
         self.screen.blit(distance_text, (10, 65))
         
-        # Draw instructions
+        # Draw instructions based on control method
         if not self.emotion_detector.model or not self.emotion_detector.webcam:
-            instruction_text = self.small_font.render("SPACE: Jump, RIGHT/D: Move, Others: Stop", True, WHITE)
+            instruction_text = self.small_font.render("SPACE: Jump, RIGHT/D: Move, Others: Stop", True, BLACK)
             self.screen.blit(instruction_text, (10, SCREEN_HEIGHT - 30))
         else:
-            instruction_text1 = self.small_font.render("NEUTRAL: Stop, HAPPY: Move Forward, SURPRISE: Jump", True, WHITE)
+            instruction_text1 = self.small_font.render("NEUTRAL: Stop, HAPPY: Move Forward, SURPRISE: Jump", True, BLACK)
             self.screen.blit(instruction_text1, (10, SCREEN_HEIGHT - 50))
-            instruction_text2 = self.small_font.render("Look at the camera and show your emotions!", True, WHITE)
+            instruction_text2 = self.small_font.render("Look at the camera and show your emotions!", True, BLACK)
             self.screen.blit(instruction_text2, (10, SCREEN_HEIGHT - 30))
         
         # Game over screen
         if self.game_over:
             overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
-            overlay.set_alpha(128)
+            overlay.set_alpha(128) # Semi-transparent overlay
             overlay.fill(BLACK)
             self.screen.blit(overlay, (0, 0))
             
@@ -526,13 +552,14 @@ class Game:
             final_score_text = self.font.render(f"Final Score: {self.score}", True, WHITE)
             restart_text = self.small_font.render("Press R to restart or ESC to quit", True, WHITE)
             
-            self.screen.blit(game_over_text, (SCREEN_WIDTH//2 - 80, SCREEN_HEIGHT//2 - 60))
-            self.screen.blit(final_score_text, (SCREEN_WIDTH//2 - 100, SCREEN_HEIGHT//2 - 20))
-            self.screen.blit(restart_text, (SCREEN_WIDTH//2 - 120, SCREEN_HEIGHT//2 + 20))
+            self.screen.blit(game_over_text, (SCREEN_WIDTH//2 - game_over_text.get_width()//2, SCREEN_HEIGHT//2 - 60))
+            self.screen.blit(final_score_text, (SCREEN_WIDTH//2 - final_score_text.get_width()//2, SCREEN_HEIGHT//2 - 20))
+            self.screen.blit(restart_text, (SCREEN_WIDTH//2 - restart_text.get_width()//2, SCREEN_HEIGHT//2 + 20))
         
-        pygame.display.flip()
+        pygame.display.flip() # Update the full display Surface to the screen
     
     def restart_game(self):
+        # Reset all game elements to their initial state
         self.player = Player(100, 300)
         self.platforms = [Platform(0, 400, 200), Platform(250, 350, 150), Platform(450, 300, 200)]
         self.obstacles = []
@@ -542,7 +569,7 @@ class Game:
         self.game_over = False
     
     def run(self):
-        self.show_main_menu()
+        self.show_main_menu() # Show main menu before starting the game loop
         while self.running:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -551,18 +578,18 @@ class Game:
                     if event.key == pygame.K_ESCAPE:
                         self.running = False
                     elif event.key == pygame.K_r and self.game_over:
-                        self.restart_game()
+                        self.restart_game() # Restart game on 'R' key press if game over
             
-            self.update()
-            self.draw()
-            self.clock.tick(FPS)
+            self.update() # Update game logic
+            self.draw() # Redraw game elements
+            self.clock.tick(FPS) # Control game speed
         
-        # Cleanup
+        # Cleanup: release webcam and destroy OpenCV windows
         if hasattr(self.emotion_detector, 'webcam') and self.emotion_detector.webcam:
             self.emotion_detector.webcam.release()
         cv2.destroyAllWindows()
-        pygame.quit()
-        sys.exit()
+        pygame.quit() # Uninitialize Pygame modules
+        sys.exit() # Exit the program
 
 if __name__ == "__main__":
     game = Game()
