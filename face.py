@@ -647,29 +647,26 @@ class Game:
     def show_settings_menu(self):
         """
         Displays the settings menu, allowing the user to change screen size.
+        Uses keyboard input for selection.
         """
         button_width = 300
         button_height = 60
         button_spacing = 20
         
-        # Get list of screen size names for buttons
         size_names = list(SCREEN_SIZES.keys())
         
         while True:
-            # Recalculate screen dimensions in case they changed from a previous setting
             screen_width = self.screen.get_width()
             screen_height = self.screen.get_height()
             
-            # Calculate starting Y position to center the buttons vertically
-            total_button_area_height = (len(SCREEN_SIZES) + 1) * (button_height + button_spacing) # +1 for back button
+            total_button_area_height = (len(SCREEN_SIZES) + 1) * (button_height + button_spacing)
             start_y = screen_height // 2 - (total_button_area_height // 2)
             
-            # Create buttons for each size option. These are recreated each frame
-            # to ensure their positions are correct if the screen size changes.
-            size_buttons = []
+            size_buttons_with_keys = [] # Store button and its associated key
             for i, size_name in enumerate(size_names):
-                button_text = f"{size_name} ({SCREEN_SIZES[size_name][0]}x{SCREEN_SIZES[size_name][1]})" \
-                              if size_name != "Fullscreen" else f"{size_name}"
+                key = pygame.K_1 + i # Assign keys 1, 2, 3...
+                button_text = f"{i+1}. {size_name} ({SCREEN_SIZES[size_name][0]}x{SCREEN_SIZES[size_name][1]})" \
+                              if size_name != "Fullscreen" else f"{i+1}. {size_name}"
                 button = Button(
                     screen_width//2 - button_width//2,
                     start_y + i * (button_height + button_spacing),
@@ -677,62 +674,61 @@ class Game:
                     button_height,
                     button_text
                 )
-                size_buttons.append((button, size_name))
+                size_buttons_with_keys.append((button, size_name, key))
             
-            # Create the back button
+            KEY_BACK = pygame.K_ESCAPE # Assign ESC key for back
             back_button = Button(
                 screen_width//2 - button_width//2,
                 start_y + len(SCREEN_SIZES) * (button_height + button_spacing),
                 button_width,
                 button_height,
-                "Back"
+                "Back (ESC)" # Added key hint
             )
             
-            # Render title
             title_font = pygame.font.Font(None, 72)
             title_text = title_font.render("Settings", True, BLACK)
             title_rect = title_text.get_rect(center=(screen_width//2, 150))
             
-            # Draw everything
             self.screen.fill(MARIO_SKY_BLUE)
             self.screen.blit(title_text, title_rect)
-            for button, _ in size_buttons:
+            for button, _, _ in size_buttons_with_keys:
                 button.draw(self.screen)
             back_button.draw(self.screen)
             pygame.display.flip()
             
-            # Event handling for settings menu
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.running = False
                     pygame.quit()
                     sys.exit()
                 elif event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_ESCAPE:
+                    if event.key == KEY_BACK:
                         return # Exit settings menu on ESC
+                    
+                    for button, size_name, key in size_buttons_with_keys:
+                        if event.key == key:
+                            self.screen = self.settings.apply_screen_size(size_name)
+                            # After changing screen size, the current loop iteration will
+                            # redraw buttons with new dimensions.
+                            break # Exit inner loop once a button is handled
                 
-                # Handle size selection buttons
-                for button, size_name in size_buttons:
-                    if button.handle_event(event):
-                        self.screen = self.settings.apply_screen_size(size_name)
-                        # After changing screen size, the current loop iteration will
-                        # redraw buttons with new dimensions. No need to `break` here
-                        # as we want to process all events for the current frame.
-                        # The next iteration of the `while True` loop will correctly
-                        # re-center buttons based on the new screen dimensions.
-                        break # Exit inner loop once a button is handled
-                
-                # Handle back button
-                if back_button.handle_event(event):
-                    return # Exit settings menu
-
+                # Keep existing mouse hover functionality for visual feedback if desired
+                for button, _, _ in size_buttons_with_keys:
+                    button.handle_event(event)
+                back_button.handle_event(event)
     def show_main_menu(self):
         """
         Displays the main menu with options to start the game, go to settings, or quit.
+        Uses keyboard input for selection.
         """
         button_width = 300
         button_height = 60
         button_spacing = 20
+        
+        # Define key mappings for menu options
+        KEY_START = pygame.K_1
+        KEY_SETTINGS = pygame.K_2
+        KEY_QUIT = pygame.K_3
         
         while True:
             # Recalculate screen dimensions in case they changed from settings menu
@@ -742,28 +738,27 @@ class Game:
             # Calculate starting Y position to center the buttons vertically
             start_y = screen_height // 2 - button_height - button_spacing
             
-            # Create main menu buttons. These are recreated each frame
-            # to ensure their positions are correct if the screen size changes.
+            # Create main menu buttons with key hints in their text
             start_button = Button(
                 screen_width//2 - button_width//2,
                 start_y,
                 button_width,
                 button_height,
-                "Start Game"
+                f"1. Start Game" # Added key hint
             )
             settings_button = Button(
                 screen_width//2 - button_width//2,
                 start_y + button_height + button_spacing,
                 button_width,
                 button_height,
-                "Settings"
+                f"2. Settings" # Added key hint
             )
             quit_button = Button(
                 screen_width//2 - button_width//2,
                 start_y + (button_height + button_spacing) * 2,
                 button_width,
                 button_height,
-                "Quit Game"
+                f"3. Quit Game" # Added key hint
             )
             
             # Render title
@@ -786,25 +781,26 @@ class Game:
                     pygame.quit()
                     sys.exit()
                 
-                # Handle button clicks
-                if start_button.handle_event(event):
-                    return  # Start the game, exit menu loop
-                if settings_button.handle_event(event):
-                    self.show_settings_menu()  # Show settings menu, then return here
-                if quit_button.handle_event(event):
-                    self.running = False
-                    pygame.quit()
-                    sys.exit()
-                
-                # Handle keyboard shortcuts
+                # Handle keyboard input for menu selection
                 if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_RETURN:
-                        return  # Start game on Enter key
-                    elif event.key == pygame.K_ESCAPE:
+                    if event.key == KEY_START:
+                        return  # Start the game, exit menu loop
+                    elif event.key == KEY_SETTINGS:
+                        self.show_settings_menu()  # Show settings menu, then return here
+                    elif event.key == KEY_QUIT:
                         self.running = False
                         pygame.quit()
                         sys.exit()
-
+                    elif event.key == pygame.K_ESCAPE: # Allow ESC to quit from main menu
+                        self.running = False
+                        pygame.quit()
+                        sys.exit()
+                
+                # Keep existing mouse hover functionality for visual feedback if desired
+                start_button.handle_event(event)
+                settings_button.handle_event(event)
+                quit_button.handle_event(event)
+                
     def emotion_detection_loop(self):
         """
         Runs in a separate thread to continuously detect emotion
