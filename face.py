@@ -42,6 +42,8 @@ MARIO_YELLOW = (255, 255, 0) # Coins/Stars
 BLACK = (0, 0, 0)
 GOOMBA_BROWN = (160, 82, 45) # Goomba body color
 GOOMBA_FEET = (80, 40, 20) # Goomba feet color
+KOOPA_GREEN = (0, 170, 0) # Koopa Troopa shell green
+KOOPA_SKIN = (255, 220, 150) # Koopa Troopa skin color
 BUTTON_HOVER = (100, 100, 100)  # Color for button hover state
 
 class Button:
@@ -334,6 +336,29 @@ class MovingObstacle(Obstacle):
         # Adjust start_x and end_x to keep relative patrol range with world movement
         self.start_x += effective_platform_speed
         self.end_x += effective_platform_speed
+
+    def draw(self, screen):
+        # Draw a Koopa Troopa-like obstacle
+        # Shell (green)
+        pygame.draw.ellipse(screen, KOOPA_GREEN, (self.x, self.y, self.width, self.height))
+        # Shell outline/pattern
+        pygame.draw.ellipse(screen, BLACK, (self.x, self.y, self.width, self.height), 2)
+        pygame.draw.circle(screen, BLACK, (int(self.x + self.width * 0.3), int(self.y + self.height * 0.3)), 3)
+        pygame.draw.circle(screen, BLACK, (int(self.x + self.width * 0.7), int(self.y + self.height * 0.3)), 3)
+        pygame.draw.circle(screen, BLACK, (int(self.x + self.width * 0.5), int(self.y + self.height * 0.6)), 3)
+
+        # Head (skin color)
+        pygame.draw.circle(screen, KOOPA_SKIN, (int(self.x + self.width * 0.5), int(self.y + self.height * 0.2)), 8)
+        # Eyes
+        pygame.draw.circle(screen, WHITE, (int(self.x + self.width * 0.4), int(self.y + self.height * 0.15)), 2)
+        pygame.draw.circle(screen, BLACK, (int(self.x + self.width * 0.4), int(self.y + self.height * 0.15)), 1)
+        pygame.draw.circle(screen, WHITE, (int(self.x + self.width * 0.6), int(self.y + self.height * 0.15)), 2)
+        pygame.draw.circle(screen, BLACK, (int(self.x + self.width * 0.6), int(self.y + self.height * 0.15)), 1)
+        
+        # Feet (brown)
+        pygame.draw.rect(screen, MARIO_GROUND_BROWN, (self.x + 5, self.y + self.height - 5, 8, 5))
+        pygame.draw.rect(screen, MARIO_GROUND_BROWN, (self.x + self.width - 13, self.y + self.height - 5, 8, 5))
+
 
 class Cloud:
     def __init__(self, x, y, size):
