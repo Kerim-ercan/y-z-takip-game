@@ -457,6 +457,40 @@ class Game:
             self.emotion_thread.daemon = True
             self.emotion_thread.start()
 
+    def show_caution_screen(self):
+        screen_width = self.screen.get_width()
+        screen_height = self.screen.get_height()
+        
+        caution_font = pygame.font.Font(None, 60)
+        instruction_font = pygame.font.Font(None, 40)
+        
+        caution_text = caution_font.render("CAUTION!", True, MARIO_RED)
+        message_text1 = instruction_font.render("For optimal emotion detection,", True, BLACK)
+        message_text2 = instruction_font.render("please play without glasses.", True, BLACK)
+        continue_text = instruction_font.render("Press any key to continue...", True, BLACK)
+        
+        caution_rect = caution_text.get_rect(center=(screen_width // 2, screen_height // 2 - 100))
+        message1_rect = message_text1.get_rect(center=(screen_width // 2, screen_height // 2 - 30))
+        message2_rect = message_text2.get_rect(center=(screen_width // 2, screen_height // 2 + 20))
+        continue_rect = continue_text.get_rect(center=(screen_width // 2, screen_height // 2 + 100))
+        
+        self.screen.fill(MARIO_SKY_BLUE)
+        self.screen.blit(caution_text, caution_rect)
+        self.screen.blit(message_text1, message1_rect)
+        self.screen.blit(message_text2, message2_rect)
+        self.screen.blit(continue_text, continue_rect)
+        pygame.display.flip()
+        
+        waiting_for_input = True
+        while waiting_for_input:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    self.running = False
+                    pygame.quit()
+                    sys.exit()
+                if event.type == pygame.KEYDOWN:
+                    waiting_for_input = False
+
     def show_settings_menu(self):
         button_width = 300
         button_height = 60
@@ -831,6 +865,10 @@ class Game:
         self.game_over = False
     
     def run(self):
+        # Show caution screen first
+        if self.emotion_detector.model and self.emotion_detector.webcam:
+            self.show_caution_screen()
+
         self.show_main_menu() # Show main menu before starting the game loop
         while self.running:
             for event in pygame.event.get():
