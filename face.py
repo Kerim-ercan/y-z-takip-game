@@ -12,6 +12,7 @@ import os
 
 # Initialize Pygame
 pygame.init()
+pygame.mixer.init() # Initialize the mixer for sounds
 
 # Default screen sizes
 SCREEN_SIZES = {
@@ -279,7 +280,7 @@ class Player:
         self.original_width = 30
         self.original_height = 40
     
-    def update(self, emotion, platforms, face_detected_status=True): # Added face_detected_status parameter
+    def update(self, emotion, platforms, face_detected_status=True, game_sounds=None): # Added game_sounds parameter
         """
         Updates player's position and state based on emotion and platform collisions.
         Returns False if the player falls off the screen (game over).
@@ -310,6 +311,8 @@ class Player:
                     self.vel_y = JUMP_STRENGTH
                     self.jump_count += 1
                     self.on_ground = False # Player is no longer on ground after jumping
+                    if game_sounds: # Play jump sound
+                        game_sounds.play_jump_sound()
             elif emotion == 'sad':
                 self.vel_x = -PLAYER_SPEED
             elif emotion == 'angry':
@@ -321,6 +324,8 @@ class Player:
                     self.width = int(self.original_width * 1.5) # Increase size
                     self.height = int(self.original_height * 1.5) # Increase size
                     print("Player grew up! Can now stomp enemies.")
+                    if game_sounds: # Play power-up sound
+                        game_sounds.play_power_up_sound()
         
         self.last_emotion = emotion # Store current emotion for next frame's comparison
         
@@ -563,6 +568,97 @@ def show_loading_screen(screen):
     screen.blit(text, rect)
     pygame.display.flip() # Update the display to show the loading screen
 
+class GameSounds:
+    """
+    Manages loading and playing game sound effects and music.
+    """
+    def __init__(self):
+        self.sounds_dir = "sounds" # Directory where sound files are stored
+        self.music = None
+        self.music_loaded = False # Track if music is loaded
+        self.jump_sound = None
+        self.coin_sound = None
+        self.game_over_sound = None
+        self.stomp_sound = None
+        self.power_up_sound = None
+        self.load_sounds()
+    
+    def load_sounds(self):
+        """Loads all sound effects and background music."""
+        try:
+            # Load background music
+            music_path = os.path.join(self.sounds_dir, "game_music.mp3") # Or .mp3
+            if os.path.exists(music_path):
+                pygame.mixer.music.load(music_path)
+                self.music_loaded = True
+                print(f"Loaded music: {music_path}")
+            else:
+                print(f"Music file not found: {music_path}")
+                self.music_loaded = False
+
+            # Load sound effects
+            self.jump_sound = self._load_effect("jump.mp3")
+            self.coin_sound = self._load_effect("coin.mp3")
+            self.game_over_sound = self._load_effect("game_over.mp3")
+            self.stomp_sound = self._load_effect("stomp.mp3")
+            self.power_up_sound = self._load_effect("power_up.mp3")
+
+        except pygame.error as e:
+            print(f"Error loading sound: {e}")
+            print("Sound will be disabled.")
+            self.music_loaded = False
+            self.jump_sound = None
+            self.coin_sound = None
+            self.game_over_sound = None
+            self.stomp_sound = None
+            self.power_up_sound = None
+
+    def _load_effect(self, filename):
+        """Helper to load a single sound effect."""
+        filepath = os.path.join(self.sounds_dir, filename)
+        if os.path.exists(filepath):
+            return pygame.mixer.Sound(filepath)
+        else:
+            print(f"Sound effect file not found: {filepath}")
+            return None
+
+    def play_music(self):
+        """Plays the background music, looping indefinitely."""
+        if self.music_loaded:
+            if not pygame.mixer.music.get_busy():
+                pygame.mixer.music.play(-1)
+        else:
+            print("No music loaded, skipping play_music().")
+    
+    def stop_music(self):
+        """Stops the background music."""
+        pygame.mixer.music.stop()
+
+    def play_jump_sound(self):
+        """Plays the jump sound effect."""
+        if self.jump_sound:
+            self.jump_sound.play()
+
+    def play_coin_sound(self):
+        """Plays the coin collection sound effect."""
+        if self.coin_sound:
+            self.coin_sound.play()
+            
+    def play_game_over_sound(self):
+        """Plays the game over sound effect."""
+        if self.game_over_sound:
+            self.game_over_sound.play()
+            
+    def play_stomp_sound(self):
+        """Plays the enemy stomp sound effect."""
+        if self.stomp_sound:
+            self.stomp_sound.play()
+            
+    def play_power_up_sound(self):
+        """Plays the power-up (grow up) sound effect."""
+        if self.power_up_sound:
+            self.power_up_sound.play()
+
 class Game:
     """
     Main game class, managing game state, objects, menus, and the game loop.
@@ -579,6 +675,9 @@ class Game:
         # Show loading screen before heavy initialization
         show_loading_screen(self.screen)
         
+        # Initialize sound manager
+        self.game_sounds = GameSounds()
+
         # Initialize game objects
         self.player = Player(100, 300)
         self.emotion_detector = EmotionDetector()
@@ -721,6 +820,8 @@ class Game:
         Displays the main menu with options to start the game, go to settings, or quit.
         Uses keyboard input for selection.
         """
+        self.game_sounds.play_music() # Start playing menu music
+
         button_width = 300
         button_height = 60
         button_spacing = 20
@@ -784,6 +885,7 @@ class Game:
                 # Handle keyboard input for menu selection
                 if event.type == pygame.KEYDOWN:
                     if event.key == KEY_START:
+                        self.game_sounds.stop_music() # Stop menu music when starting game
                         return  # Start the game, exit menu loop
                     elif event.key == KEY_SETTINGS:
                         self.show_settings_menu()  # Show settings menu, then return here
@@ -799,8 +901,7 @@ class Game:
                 # Keep existing mouse hover functionality for visual feedback if desired
                 start_button.handle_event(event)
                 settings_button.handle_event(event)
-                quit_button.handle_event(event)
-                
+        
     def emotion_detection_loop(self):
         """
         Runs in a separate thread to continuously detect emotion
@@ -817,6 +918,13 @@ class Game:
         if emotion detection is not active.
         """
         keys = pygame.key.get_pressed()
+        
+        # Check if the desired emotion for 'surprise' or 'angry' is *newly* pressed
+        # This prevents continuous jump/power-up activation from holding the key
+        
+        # Store previous state for comparison
+        prev_emotion = self.emotion_detector.current_emotion
+        
         if keys[pygame.K_SPACE]:
             self.emotion_detector.current_emotion = 'surprise' # Maps to jump
         elif keys[pygame.K_RIGHT] or keys[pygame.K_d]:
@@ -827,6 +935,7 @@ class Game:
             self.emotion_detector.current_emotion = 'angry'
         else:
             self.emotion_detector.current_emotion = 'neutral' # Maps to stop
+
         # If using keyboard, assume a 'face' is always detected for movement purposes.
         self.emotion_detector.face_detected = True 
     
@@ -898,8 +1007,10 @@ class Game:
                 if self.player.is_grown_up:
                     self.obstacles.remove(obstacle) # Remove obstacle if player is grown up
                     self.score += 50 # Reward for defeating an enemy
+                    self.game_sounds.play_stomp_sound() # Play stomp sound
                     print("Enemy defeated!")
                 else:
+                    self.game_sounds.play_game_over_sound() # Play game over sound
                     return False # Game over if collides with obstacle and not grown up
         
         # Check collectible collisions
@@ -909,6 +1020,7 @@ class Game:
             if player_rect.colliderect(collectible_rect):
                 self.collectibles.remove(collectible) # Remove collected item
                 self.score += 10 # Increase score
+                self.game_sounds.play_coin_sound() # Play coin sound
         
         return True # No fatal collisions
     
@@ -928,13 +1040,14 @@ class Game:
         face_detected_status = self.emotion_detector.face_detected # Get face detection status
         
         # Player update (vertical movement handled by gravity, horizontal by world scroll)
-        if not self.player.update(current_emotion, self.platforms, face_detected_status): # Pass face status
+        if not self.player.update(current_emotion, self.platforms, face_detected_status, self.game_sounds): # Pass game_sounds
             self.game_over = True # Player fell off screen
+            self.game_sounds.play_game_over_sound() # Play game over sound
             return
         
         # Check for collisions with obstacles and collectibles
         if not self.check_collisions():
-            self.game_over = True # Player hit an obstacle
+            self.game_over = True # Player hit an obstacle (sound already played in check_collisions)
             return
         
         # Determine effective speed for world scrolling based on player's horizontal velocity
@@ -1111,6 +1224,7 @@ class Game:
         self.score = 0
         self.distance = 0
         self.game_over = False
+        self.game_sounds.play_music() # Start playing game music again on restart
     
     def run(self):
         """
@@ -1122,6 +1236,9 @@ class Game:
 
         # Show main menu before starting the game loop
         self.show_main_menu() 
+        
+        # Once game starts from main menu, play game music
+        self.game_sounds.play_music()
         
         while self.running:
             # Event handling for the main game loop
@@ -1135,6 +1252,10 @@ class Game:
                         self.restart_game() # Restart game on 'R' key press if game over
                     elif event.key == pygame.K_p and not self.game_over:
                         self.paused = not self.paused # Toggle pause with P key
+                        if self.paused:
+                            pygame.mixer.music.pause() # Pause music when game is paused
+                        else:
+                            pygame.mixer.music.unpause() # Unpause music when game resumes
             
             # Only update game logic if not paused and not game over
             if not self.paused and not self.game_over:
