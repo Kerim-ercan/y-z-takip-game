@@ -324,6 +324,7 @@ class Game:
         pygame.display.set_caption("Mario-like Emotion Platformer") # Updated title
         self.clock = pygame.time.Clock()
         self.running = True
+        self.paused = False  # Add paused state
         
         # Show loading screen
         show_loading_screen(self.screen)
@@ -562,6 +563,27 @@ class Game:
         # Fill the background with Mario-like sky blue
         self.screen.fill(MARIO_SKY_BLUE)
     
+    def show_pause_menu(self):
+        # Create semi-transparent overlay
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+        overlay.set_alpha(128)
+        overlay.fill(BLACK)
+        self.screen.blit(overlay, (0, 0))
+        
+        # Draw pause menu text
+        title_font = pygame.font.Font(None, 72)
+        menu_font = pygame.font.Font(None, 48)
+        
+        pause_text = title_font.render("PAUSED", True, WHITE)
+        continue_text = menu_font.render("Press P to Continue", True, WHITE)
+        quit_text = menu_font.render("Press ESC to Quit", True, WHITE)
+        
+        self.screen.blit(pause_text, (SCREEN_WIDTH//2 - pause_text.get_width()//2, SCREEN_HEIGHT//2 - 100))
+        self.screen.blit(continue_text, (SCREEN_WIDTH//2 - continue_text.get_width()//2, SCREEN_HEIGHT//2))
+        self.screen.blit(quit_text, (SCREEN_WIDTH//2 - quit_text.get_width()//2, SCREEN_HEIGHT//2 + 50))
+        
+        pygame.display.flip()
+
     def draw(self):
         self.draw_background()
         
@@ -599,10 +621,10 @@ class Game:
         
         # Draw instructions based on control method
         if not self.emotion_detector.model or not self.emotion_detector.webcam:
-            instruction_text = self.small_font.render("SPACE: Jump, RIGHT/D: Move Forward, LEFT/A: Move Backward, Others: Stop", True, BLACK)
+            instruction_text = self.small_font.render("SPACE: Jump, RIGHT/D: Move Forward, LEFT/A: Move Backward, P: Pause, Others: Stop", True, BLACK)
             self.screen.blit(instruction_text, (10, SCREEN_HEIGHT - 30))
         else:
-            instruction_text1 = self.small_font.render("NEUTRAL: Stop, HAPPY: Move Forward, SURPRISE: Jump, SAD: Move Backward", True, BLACK)
+            instruction_text1 = self.small_font.render("NEUTRAL: Stop, HAPPY: Move Forward, SURPRISE: Jump, SAD: Move Backward, P: Pause", True, BLACK)
             self.screen.blit(instruction_text1, (10, SCREEN_HEIGHT - 50))
             instruction_text2 = self.small_font.render("Look at the camera and show your emotions!", True, BLACK)
             self.screen.blit(instruction_text2, (10, SCREEN_HEIGHT - 30))
@@ -621,6 +643,10 @@ class Game:
             self.screen.blit(game_over_text, (SCREEN_WIDTH//2 - game_over_text.get_width()//2, SCREEN_HEIGHT//2 - 60))
             self.screen.blit(final_score_text, (SCREEN_WIDTH//2 - final_score_text.get_width()//2, SCREEN_HEIGHT//2 - 20))
             self.screen.blit(restart_text, (SCREEN_WIDTH//2 - restart_text.get_width()//2, SCREEN_HEIGHT//2 + 20))
+        
+        # Show pause menu if game is paused
+        if self.paused:
+            self.show_pause_menu()
         
         pygame.display.flip() # Update the full display Surface to the screen
     
@@ -649,8 +675,12 @@ class Game:
                         self.running = False
                     elif event.key == pygame.K_r and self.game_over:
                         self.restart_game() # Restart game on 'R' key press if game over
+                    elif event.key == pygame.K_p and not self.game_over:  # Toggle pause with P key
+                        self.paused = not self.paused
             
-            self.update() # Update game logic
+            if not self.paused and not self.game_over:  # Only update game if not paused and not game over
+                self.update() # Update game logic
+            
             self.draw() # Redraw game elements
             self.clock.tick(FPS) # Control game speed
         
