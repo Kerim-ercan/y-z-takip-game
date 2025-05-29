@@ -54,45 +54,59 @@ class Button:
     A simple button class for Pygame menus.
     Handles drawing, hover states, and click detection.
     """
-    def __init__(self, x, y, width, height, text, font_size=48, text_color=WHITE, button_color=MARIO_GROUND_TOP_GREEN):
+    def __init__(self, x, y, width, height, text, font_object, text_color=WHITE, button_color=MARIO_GROUND_TOP_GREEN, hover_color=BUTTON_HOVER, pressed_color=(50,50,50)): # Added font_object and pressed_color
         self.rect = pygame.Rect(x, y, width, height)
         self.text = text
-        self.font = pygame.font.Font(None, font_size)
+        self.font = font_object # Use the passed font object
         self.text_color = text_color
         self.button_color = button_color
+        self.hover_color = hover_color
+        self.pressed_color = pressed_color
         self.is_hovered = False
-        
+        self.is_pressed = False # New state for pressed
+
     def draw(self, screen):
         """
         Draws the button on the screen, including its background, border, and text.
-        Changes color on hover.
+        Changes color on hover and press.
         """
-        # Determine button color based on hover state
-        color = BUTTON_HOVER if self.is_hovered else self.button_color
-        pygame.draw.rect(screen, color, self.rect, border_radius=10)
-        pygame.draw.rect(screen, BLACK, self.rect, 2, border_radius=10)  # Button border
-        
-        # Render and center the button text
-        text_surface = self.font.render(self.text, True, self.text_color)
-        text_rect = text_surface.get_rect(center=self.rect.center)
-        screen.blit(text_surface, text_rect)
-        
+        current_color = self.button_color
+        if self.is_pressed:
+            current_color = self.pressed_color
+        elif self.is_hovered:
+            current_color = self.hover_color
+
+        pygame.draw.rect(screen, current_color, self.rect, border_radius=10) #
+        pygame.draw.rect(screen, BLACK, self.rect, 2, border_radius=10)  # Button border #
+
+        text_surface = self.font.render(self.text, True, self.text_color) #
+        text_rect = text_surface.get_rect(center=self.rect.center) #
+
+        # Offset text slightly if pressed
+        if self.is_pressed:
+            text_rect.move_ip(2, 2)
+
+        screen.blit(text_surface, text_rect) #
+
     def handle_event(self, event):
         """
         Handles Pygame events for the button.
-        Updates hover state on MOUSEMOTION.
-        Returns True if the button is clicked (MOUSEBUTTONUP while hovered).
+        Updates hover and pressed states.
+        Returns True if the button is clicked (MOUSEBUTTONUP while hovered and pressed).
         """
-        if event.type == pygame.MOUSEMOTION:
-            # Update hover state when mouse moves over the button
-            self.is_hovered = self.rect.collidepoint(event.pos)
-        elif event.type == pygame.MOUSEBUTTONUP:
-            # Check for click on mouse button release
-            # This is more reliable than MOUSEBUTTONDOWN as it prevents accidental clicks
-            # if the mouse is dragged off the button before release.
-            if self.is_hovered:
-                return True # Button was clicked
-        return False # Button was not clicked or event not relevant
+        clicked = False
+        if event.type == pygame.MOUSEMOTION: #
+            self.is_hovered = self.rect.collidepoint(event.pos) #
+            if not self.is_hovered: # If mouse moves off while pressed, unpress
+                 self.is_pressed = False
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1 and self.is_hovered: # Left mouse button
+                self.is_pressed = True
+        elif event.type == pygame.MOUSEBUTTONUP: #
+            if event.button == 1 and self.is_hovered and self.is_pressed: #
+                clicked = True # Button was clicked #
+            self.is_pressed = False # Reset pressed state on any mouse up
+        return clicked
 
 class Settings:
     """
@@ -710,38 +724,94 @@ class Game:
         self.clock = pygame.time.Clock()
         self.running = True # Main game loop control
         self.paused = False # Game pause state
-        
+
+        # --- UI Font Loading ---
+        try:
+            self.font_path = "pixel_font.ttf"
+            if os.path.exists(self.font_path):
+                self.title_font = pygame.font.Font(self.font_path, 60)
+                self.header_font = pygame.font.Font(self.font_path, 48)
+                self.menu_font = pygame.font.Font(self.font_path, 36)
+                self.hud_font = pygame.font.Font(self.font_path, 28)
+                self.small_font = pygame.font.Font(self.font_path, 22)
+                self.button_font = pygame.font.Font(self.font_path, 30)
+            else:
+                print(f"Font file '{self.font_path}' not found. Using default font.")
+                self.title_font = pygame.font.Font(None, 72)
+                self.header_font = pygame.font.Font(None, 60)
+                self.menu_font = pygame.font.Font(None, 48)
+                self.hud_font = pygame.font.Font(None, 36)
+                self.small_font = pygame.font.Font(None, 24)
+                self.button_font = pygame.font.Font(None, 36)
+        except Exception as e:
+            print(f"Font loading error: {e}. Using default font.")
+            self.title_font = pygame.font.Font(None, 72)
+            self.header_font = pygame.font.Font(None, 60)
+            self.menu_font = pygame.font.Font(None, 48)
+            self.hud_font = pygame.font.Font(None, 36)
+            self.small_font = pygame.font.Font(None, 24)
+            self.button_font = pygame.font.Font(None, 36)
+
         # Show loading screen before heavy initialization
-        show_loading_screen(self.screen)
-        
+        self.show_loading_screen(self.screen) # Changed to self.show_loading_screen
+
         # Initialize sound manager, passing the settings object
         self.game_sounds = GameSounds(self.settings)
 
         # Initialize game objects
         self.player = Player(100, 300)
         self.emotion_detector = EmotionDetector()
-        
+
         # Game world objects
         self.platforms = [Platform(0, SCREEN_HEIGHT - 50, SCREEN_WIDTH * 2)] # Initial long ground platform
-        self.platforms.append(Platform(SCREEN_WIDTH * 0.8, SCREEN_HEIGHT - 150, 150))
-        self.platforms.append(Platform(SCREEN_WIDTH * 1.2, SCREEN_HEIGHT - 250, 200))
-        
-        self.obstacles = []
-        self.clouds = [Cloud(random.randint(0, SCREEN_WIDTH), random.randint(50, 200), random.randint(40, 80)) for _ in range(5)]
-        self.collectibles = []
-        
+        self.platforms.append(Platform(SCREEN_WIDTH * 0.8, SCREEN_HEIGHT - 150, 150)) #
+        self.platforms.append(Platform(SCREEN_WIDTH * 1.2, SCREEN_HEIGHT - 250, 200)) #
+
+        self.obstacles = [] #
+        self.clouds = [Cloud(random.randint(0, SCREEN_WIDTH), random.randint(50, 200), random.randint(40, 80)) for _ in range(5)] #
+        self.collectibles = [] #
+
         # Game state variables
-        self.score = 0
-        self.distance = 0
-        self.game_over = False
-        self.font = pygame.font.Font(None, 36) # Font for score, etc.
-        self.small_font = pygame.font.Font(None, 24) # Smaller font for instructions
-        
+        self.score = 0 #
+        self.distance = 0 #
+        self.game_over = False #
+        # self.font and self.small_font are now instance variables from above
+
         # Start emotion detection in a separate thread if model and webcam are available
-        if self.emotion_detector.model and self.emotion_detector.webcam:
-            self.emotion_thread = threading.Thread(target=self.emotion_detection_loop)
-            self.emotion_thread.daemon = True # Daemon thread exits when main program exits
-            self.emotion_thread.start()
+        if self.emotion_detector.model and self.emotion_detector.webcam: #
+            self.emotion_thread = threading.Thread(target=self.emotion_detection_loop) #
+            self.emotion_thread.daemon = True # Daemon thread exits when main program exits #
+            self.emotion_thread.start() #
+
+    # Make show_loading_screen a method of Game class to access fonts
+    def show_loading_screen(self, screen): # Added self
+        """Displays an improved loading screen."""
+        screen_width = screen.get_width() # Use passed screen's width
+        screen_height = screen.get_height() # Use passed screen's height
+
+        screen.fill(BLACK) # Black background
+
+        title_text_surf = self.title_font.render("Emotion Runner", True, MARIO_SKY_BLUE)
+        title_rect = title_text_surf.get_rect(center=(screen_width // 2, screen_height // 2 - 50))
+        screen.blit(title_text_surf, title_rect)
+
+        loading_text_surf = self.menu_font.render("Loading…", True, WHITE) #
+        loading_rect = loading_text_surf.get_rect(center=(screen_width // 2, screen_height // 2 + 20)) #
+        screen.blit(loading_text_surf, loading_rect) #
+
+        # Simple animated progress bar
+        progress_bar_width = 200
+        progress_bar_height = 20
+        progress_bar_x = screen_width // 2 - progress_bar_width // 2
+        progress_bar_y = screen_height // 2 + 70
+
+        for i in range(progress_bar_width + 1):
+            pygame.draw.rect(screen, MARIO_GROUND_TOP_GREEN, (progress_bar_x, progress_bar_y, i, progress_bar_height))
+            pygame.draw.rect(screen, WHITE, (progress_bar_x, progress_bar_y, progress_bar_width, progress_bar_height), 2) # Border
+            pygame.display.flip()
+            pygame.time.delay(5) # Adjust for speed of loading bar
+
+        pygame.display.flip() # Update the display to show the loading screen #
 
     def show_caution_screen(self):
         """
@@ -787,212 +857,249 @@ class Game:
         Displays the settings menu, allowing the user to change screen size and sound volume.
         Uses keyboard input for selection.
         """
-        button_width = 300
-        button_height = 60
-        button_spacing = 20
-        
-        size_names = list(SCREEN_SIZES.keys())
-        
-        # Keys for volume control
-        KEY_MASTER_VOL_UP = pygame.K_KP_PLUS # Numpad +
-        KEY_MASTER_VOL_DOWN = pygame.K_KP_MINUS # Numpad -
-        KEY_MUSIC_VOL_UP = pygame.K_UP # Up arrow
-        KEY_MUSIC_VOL_DOWN = pygame.K_DOWN # Down arrow
-        KEY_SFX_VOL_UP = pygame.K_RIGHT # Right arrow
-        KEY_SFX_VOL_DOWN = pygame.K_LEFT # Left arrow
+        button_width = 400 # Wider for longer text
+        button_height = 60 #
+        button_spacing = 15 #
+        volume_bar_width = 200
+        volume_bar_height = 20
+
+        size_names = list(SCREEN_SIZES.keys()) #
+
+        KEY_MASTER_VOL_UP = pygame.K_KP_PLUS # Numpad + #
+        KEY_MASTER_VOL_DOWN = pygame.K_KP_MINUS # Numpad - #
+        KEY_MUSIC_VOL_UP = pygame.K_UP # Up arrow #
+        KEY_MUSIC_VOL_DOWN = pygame.K_DOWN # Down arrow #
+        KEY_SFX_VOL_UP = pygame.K_RIGHT # Right arrow #
+        KEY_SFX_VOL_DOWN = pygame.K_LEFT # Left arrow #
 
         while True:
-            screen_width = self.screen.get_width()
-            screen_height = self.screen.get_height()
-            
-            # Calculate starting Y position for screen size buttons
-            start_y_screens = screen_height // 2 - (len(SCREEN_SIZES) * (button_height + button_spacing)) // 2
-            
-            size_buttons_with_keys = [] # Store button and its associated key
-            for i, size_name in enumerate(size_names):
-                key = pygame.K_1 + i # Assign keys 1, 2, 3...
-                button_text = f"{i+1}. {size_name} ({SCREEN_SIZES[size_name][0]}x{SCREEN_SIZES[size_name][1]})" \
-                              if size_name != "Fullscreen" else f"{i+1}. {size_name}"
-                button = Button(
-                    screen_width//2 - button_width//2,
-                    start_y_screens + i * (button_height + button_spacing),
-                    button_width,
-                    button_height,
-                    button_text
-                )
-                size_buttons_with_keys.append((button, size_name, key))
-            
-            # Calculate starting Y position for volume settings, below screen size settings
-            start_y_volumes = start_y_screens + len(SCREEN_SIZES) * (button_height + button_spacing) + 50 # Add extra space
-            
-            # Volume control display
-            master_vol_text = self.font.render(f"Master Volume: {int(self.settings.master_volume * 100)}% (+/- Numpad)", True, BLACK)
-            music_vol_text = self.font.render(f"Music Volume: {int(self.settings.music_volume * 100)}% (Up/Down Arrows)", True, BLACK)
-            sfx_vol_text = self.font.render(f"SFX Volume: {int(self.settings.sfx_volume * 100)}% (Left/Right Arrows)", True, BLACK)
-            
-            # Position volume texts
-            master_vol_rect = master_vol_text.get_rect(center=(screen_width//2, start_y_volumes))
-            music_vol_rect = music_vol_text.get_rect(center=(screen_width//2, start_y_volumes + 40))
-            sfx_vol_rect = sfx_vol_text.get_rect(center=(screen_width//2, start_y_volumes + 80))
+            screen_width = self.screen.get_width() #
+            screen_height = self.screen.get_height() #
 
-            KEY_BACK = pygame.K_ESCAPE # Assign ESC key for back
+            title_text_surf = self.header_font.render("Settings", True, BLACK) # Use header_font #
+            title_rect = title_text_surf.get_rect(center=(screen_width//2, 80)) # Adjusted position #
+
+            # Screen size buttons
+            num_size_buttons = len(size_names)
+            total_size_button_height = num_size_buttons * button_height + (num_size_buttons -1) * button_spacing
+            start_y_screens = title_rect.bottom + 50
+
+            size_buttons_with_keys = [] #
+            for i, size_name in enumerate(size_names): #
+                key = pygame.K_1 + i # Assign keys 1, 2, 3... #
+                button_text = f"{i+1}. {size_name}" #
+                if size_name != "Fullscreen": #
+                    button_text += f" ({SCREEN_SIZES[size_name][0]}x{SCREEN_SIZES[size_name][1]})" #
+
+                button = Button(
+                    screen_width//2 - button_width//2, #
+                    start_y_screens + i * (button_height + button_spacing), #
+                    button_width, #
+                    button_height, #
+                    button_text,
+                    self.button_font # Use button_font
+                )
+                size_buttons_with_keys.append((button, size_name, key)) #
+
+            # Volume controls display (text and bars)
+            volume_section_y_start = start_y_screens + total_size_button_height + 50
+            text_y_offset = 0
+
+            # Master Volume
+            master_vol_text_surf = self.menu_font.render(f"Master: {int(self.settings.master_volume * 100)}% (+/- Numpad)", True, BLACK) #
+            master_vol_rect = master_vol_text_surf.get_rect(midleft=(screen_width//2 - button_width//2, volume_section_y_start + text_y_offset)) #
+            master_bar_x = master_vol_rect.right + 20
+            master_filled_width = int(volume_bar_width * self.settings.master_volume)
+
+            text_y_offset += 40
+            # Music Volume
+            music_vol_text_surf = self.menu_font.render(f"Music: {int(self.settings.music_volume * 100)}% (Up/Down)", True, BLACK) #
+            music_vol_rect = music_vol_text_surf.get_rect(midleft=(screen_width//2 - button_width//2, volume_section_y_start + text_y_offset)) #
+            music_bar_x = music_vol_rect.right + 20
+            music_filled_width = int(volume_bar_width * self.settings.music_volume)
+
+            text_y_offset += 40
+            # SFX Volume
+            sfx_vol_text_surf = self.menu_font.render(f"SFX: {int(self.settings.sfx_volume * 100)}% (Left/Right)", True, BLACK) #
+            sfx_vol_rect = sfx_vol_text_surf.get_rect(midleft=(screen_width//2 - button_width//2, volume_section_y_start + text_y_offset)) #
+            sfx_bar_x = sfx_vol_rect.right + 20
+            sfx_filled_width = int(volume_bar_width * self.settings.sfx_volume)
+
+
+            KEY_BACK = pygame.K_ESCAPE # Assign ESC key for back #
             back_button = Button(
-                screen_width//2 - button_width//2,
-                start_y_volumes + 120 + button_spacing, # Position below volume texts
-                button_width,
-                button_height,
-                "Back (ESC)" # Added key hint
+                screen_width//2 - button_width//2, #
+                volume_section_y_start + text_y_offset + 50, # Position below volume texts #
+                button_width, #
+                button_height, #
+                "Back (ESC)", # Added key hint #
+                self.button_font # Use button_font
             )
-            
-            title_font = pygame.font.Font(None, 72)
-            title_text = title_font.render("Settings", True, BLACK)
-            title_rect = title_text.get_rect(center=(screen_width//2, 100)) # Move title up slightly
-            
-            self.screen.fill(MARIO_SKY_BLUE)
-            self.screen.blit(title_text, title_rect)
-            
-            for button, _, _ in size_buttons_with_keys:
-                button.draw(self.screen)
-            
-            self.screen.blit(master_vol_text, master_vol_rect)
-            self.screen.blit(music_vol_text, music_vol_rect)
-            self.screen.blit(sfx_vol_text, sfx_vol_rect)
-            
-            back_button.draw(self.screen)
-            pygame.display.flip()
-            
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    self.running = False
-                    pygame.quit()
-                    sys.exit()
-                elif event.type == pygame.KEYDOWN:
-                    if event.key == KEY_BACK:
-                        return # Exit settings menu on ESC
-                    
-                    # Handle screen size selection
-                    for button, size_name, key in size_buttons_with_keys:
-                        if event.key == key:
-                            self.screen = self.settings.apply_screen_size(size_name)
-                            # After changing screen size, the current loop iteration will
-                            # redraw buttons with new dimensions.
-                            break # Exit inner loop once a button is handled
-                    
-                    # Handle volume control
-                    volume_change_amount = 0.05 # 5% increment/decrement
-                    
-                    if event.key == KEY_MASTER_VOL_UP:
-                        self.settings.set_master_volume(self.settings.master_volume + volume_change_amount)
-                        self.game_sounds.apply_volumes()
-                    elif event.key == KEY_MASTER_VOL_DOWN:
-                        self.settings.set_master_volume(self.settings.master_volume - volume_change_amount)
-                        self.game_sounds.apply_volumes()
-                    elif event.key == KEY_MUSIC_VOL_UP:
-                        self.settings.set_music_volume(self.settings.music_volume + volume_change_amount)
-                        self.game_sounds.apply_volumes()
-                    elif event.key == KEY_MUSIC_VOL_DOWN:
-                        self.settings.set_music_volume(self.settings.music_volume - volume_change_amount)
-                        self.game_sounds.apply_volumes()
-                    elif event.key == KEY_SFX_VOL_UP:
-                        self.settings.set_sfx_volume(self.settings.sfx_volume + volume_change_amount)
-                        self.game_sounds.apply_volumes()
-                    elif event.key == KEY_SFX_VOL_DOWN:
-                        self.settings.set_sfx_volume(self.settings.sfx_volume - volume_change_amount)
-                        self.game_sounds.apply_volumes()
-                
-                # Keep existing mouse hover functionality for visual feedback if desired
-                for button, _, _ in size_buttons_with_keys:
-                    button.handle_event(event)
-                back_button.handle_event(event)
+
+            self.screen.fill(MARIO_SKY_BLUE) #
+            self.screen.blit(title_text_surf, title_rect) #
+
+            for button, _, _ in size_buttons_with_keys: #
+                button.draw(self.screen) #
+
+            # Draw Master Volume
+            self.screen.blit(master_vol_text_surf, master_vol_rect) #
+            pygame.draw.rect(self.screen, WHITE, (master_bar_x, master_vol_rect.centery - volume_bar_height//2, volume_bar_width, volume_bar_height))
+            pygame.draw.rect(self.screen, MARIO_GROUND_TOP_GREEN, (master_bar_x, master_vol_rect.centery - volume_bar_height//2, master_filled_width, volume_bar_height))
+            pygame.draw.rect(self.screen, BLACK, (master_bar_x, master_vol_rect.centery - volume_bar_height//2, volume_bar_width, volume_bar_height), 2)
+
+
+            # Draw Music Volume
+            self.screen.blit(music_vol_text_surf, music_vol_rect) #
+            pygame.draw.rect(self.screen, WHITE, (music_bar_x, music_vol_rect.centery - volume_bar_height//2, volume_bar_width, volume_bar_height))
+            pygame.draw.rect(self.screen, MARIO_GROUND_TOP_GREEN, (music_bar_x, music_vol_rect.centery - volume_bar_height//2, music_filled_width, volume_bar_height))
+            pygame.draw.rect(self.screen, BLACK, (music_bar_x, music_vol_rect.centery - volume_bar_height//2, volume_bar_width, volume_bar_height), 2)
+
+            # Draw SFX Volume
+            self.screen.blit(sfx_vol_text_surf, sfx_vol_rect) #
+            pygame.draw.rect(self.screen, WHITE, (sfx_bar_x, sfx_vol_rect.centery - volume_bar_height//2, volume_bar_width, volume_bar_height))
+            pygame.draw.rect(self.screen, MARIO_GROUND_TOP_GREEN, (sfx_bar_x, sfx_vol_rect.centery - volume_bar_height//2, sfx_filled_width, volume_bar_height))
+            pygame.draw.rect(self.screen, BLACK, (sfx_bar_x, sfx_vol_rect.centery - volume_bar_height//2, volume_bar_width, volume_bar_height), 2)
+
+            back_button.draw(self.screen) #
+            pygame.display.flip() #
+
+            for event in pygame.event.get(): #
+                if event.type == pygame.QUIT: #
+                    self.running = False #
+                    pygame.quit() #
+                    sys.exit() #
+
+                # Handle button clicks via mouse
+                if back_button.handle_event(event):
+                    return
+                for button, size_name, _ in size_buttons_with_keys:
+                    if button.handle_event(event):
+                        self.screen = self.settings.apply_screen_size(size_name) #
+                        # Redraw with new dimensions in next loop
+                        break
+
+                if event.type == pygame.KEYDOWN: #
+                    if event.key == KEY_BACK: #
+                        return # Exit settings menu on ESC #
+
+                    for button, size_name, key in size_buttons_with_keys: #
+                        if event.key == key: #
+                            self.screen = self.settings.apply_screen_size(size_name) #
+                            break # Exit inner loop once a button is handled #
+
+                    volume_change_amount = 0.05 # 5% increment/decrement #
+
+                    if event.key == KEY_MASTER_VOL_UP: #
+                        self.settings.set_master_volume(self.settings.master_volume + volume_change_amount) #
+                        self.game_sounds.apply_volumes() #
+                    elif event.key == KEY_MASTER_VOL_DOWN: #
+                        self.settings.set_master_volume(self.settings.master_volume - volume_change_amount) #
+                        self.game_sounds.apply_volumes() #
+                    elif event.key == KEY_MUSIC_VOL_UP: #
+                        self.settings.set_music_volume(self.settings.music_volume + volume_change_amount) #
+                        self.game_sounds.apply_volumes() #
+                    elif event.key == KEY_MUSIC_VOL_DOWN: #
+                        self.settings.set_music_volume(self.settings.music_volume - volume_change_amount) #
+                        self.game_sounds.apply_volumes() #
+                    elif event.key == KEY_SFX_VOL_UP: #
+                        self.settings.set_sfx_volume(self.settings.sfx_volume + volume_change_amount) #
+                        self.game_sounds.apply_volumes() #
+                    elif event.key == KEY_SFX_VOL_DOWN: #
+                        self.settings.set_sfx_volume(self.settings.sfx_volume - volume_change_amount) #
+                        self.game_sounds.apply_volumes() #
 
     def show_main_menu(self):
         """
         Displays the main menu with options to start the game, go to settings, or quit.
         Uses keyboard input for selection.
         """
-        self.game_sounds.play_music() # Start playing menu music
+        self.game_sounds.play_music() # Start playing menu music #
 
-        button_width = 300
-        button_height = 60
-        button_spacing = 20
-        
-        # Define key mappings for menu options
-        KEY_START = pygame.K_1
-        KEY_SETTINGS = pygame.K_2
-        KEY_QUIT = pygame.K_3
-        
+        button_width = 350 # Slightly wider for new font
+        button_height = 70 # Slightly taller
+        button_spacing = 25
+
+        KEY_START = pygame.K_1 #
+        KEY_SETTINGS = pygame.K_2 #
+        KEY_QUIT = pygame.K_3 #
+
         while True:
-            # Recalculate screen dimensions in case they changed from settings menu
-            screen_width = self.screen.get_width()
-            screen_height = self.screen.get_height()
-            
-            # Calculate starting Y position to center the buttons vertically
-            start_y = screen_height // 2 - button_height - button_spacing
-            
-            # Create main menu buttons with key hints in their text
+            screen_width = self.screen.get_width() #
+            screen_height = self.screen.get_height() #
+
+            start_y = screen_height // 2 - (button_height * 1.5 + button_spacing) # Adjust centering
+
             start_button = Button(
-                screen_width//2 - button_width//2,
+                screen_width//2 - button_width//2, #
                 start_y,
-                button_width,
-                button_height,
-                f"1. Start Game" # Added key hint
+                button_width, #
+                button_height, #
+                f"1. Start Game", #
+                self.button_font # Use the new button_font
             )
             settings_button = Button(
-                screen_width//2 - button_width//2,
-                start_y + button_height + button_spacing,
-                button_width,
-                button_height,
-                f"2. Settings" # Added key hint
+                screen_width//2 - button_width//2, #
+                start_y + button_height + button_spacing, #
+                button_width, #
+                button_height, #
+                f"2. Settings", #
+                self.button_font # Use the new button_font
             )
             quit_button = Button(
-                screen_width//2 - button_width//2,
-                start_y + (button_height + button_spacing) * 2,
-                button_width,
-                button_height,
-                f"3. Quit Game" # Added key hint
+                screen_width//2 - button_width//2, #
+                start_y + (button_height + button_spacing) * 2, #
+                button_width, #
+                button_height, #
+                f"3. Quit Game", #
+                self.button_font # Use the new button_font
             )
-            
-            # Render title
-            title_font = pygame.font.Font(None, 72)
-            title_text = title_font.render("Mario-like Emotion Platformer", True, BLACK)
-            title_rect = title_text.get_rect(center=(screen_width//2, 150))
-            
-            # Draw everything
-            self.screen.fill(MARIO_SKY_BLUE)
-            self.screen.blit(title_text, title_rect)
-            start_button.draw(self.screen)
-            settings_button.draw(self.screen)
-            quit_button.draw(self.screen)
-            pygame.display.flip() # Update display
-            
-            # Event handling for main menu
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    self.running = False
-                    pygame.quit()
-                    sys.exit()
-                
-                # Handle keyboard input for menu selection
-                if event.type == pygame.KEYDOWN:
-                    if event.key == KEY_START:
-                        self.game_sounds.stop_music() # Stop menu music when starting game
-                        return  # Start the game, exit menu loop
-                    elif event.key == KEY_SETTINGS:
-                        self.show_settings_menu()  # Show settings menu, then return here
-                        self.game_sounds.apply_volumes() # Apply any changed volumes immediately
-                        self.game_sounds.play_music() # Ensure music continues after returning from settings
-                    elif event.key == KEY_QUIT:
-                        self.running = False
-                        pygame.quit()
-                        sys.exit()
-                    elif event.key == pygame.K_ESCAPE: # Allow ESC to quit from main menu
-                        self.running = False
-                        pygame.quit()
-                        sys.exit()
-                
-                # Keep existing mouse hover functionality for visual feedback if desired
-                start_button.handle_event(event)
-                settings_button.handle_event(event)
+
+            title_text = self.title_font.render("Emotion Platformer", True, BLACK) # # Use title_font
+            title_rect = title_text.get_rect(center=(screen_width//2, screen_height // 4)) # Adjusted title position
+
+            self.screen.fill(MARIO_SKY_BLUE) #
+            self.screen.blit(title_text, title_rect) #
+            start_button.draw(self.screen) #
+            settings_button.draw(self.screen) #
+            quit_button.draw(self.screen) #
+            pygame.display.flip() # Update display #
+
+            for event in pygame.event.get(): #
+                if event.type == pygame.QUIT: #
+                    self.running = False #
+                    pygame.quit() #
+                    sys.exit() #
+
+                # Handle button clicks via mouse
+                if start_button.handle_event(event):
+                    self.game_sounds.stop_music() #
+                    return
+                if settings_button.handle_event(event):
+                    self.show_settings_menu() #
+                    self.game_sounds.apply_volumes() #
+                    self.game_sounds.play_music() #
+                if quit_button.handle_event(event):
+                    self.running = False #
+                    pygame.quit() #
+                    sys.exit() #
+
+                if event.type == pygame.KEYDOWN: #
+                    if event.key == KEY_START: #
+                        self.game_sounds.stop_music() # Stop menu music when starting game #
+                        return  # Start the game, exit menu loop #
+                    elif event.key == KEY_SETTINGS: #
+                        self.show_settings_menu()  # Show settings menu, then return here #
+                        self.game_sounds.apply_volumes() # Apply any changed volumes immediately #
+                        self.game_sounds.play_music() # Ensure music continues after returning from settings #
+                    elif event.key == KEY_QUIT: #
+                        self.running = False #
+                        pygame.quit() #
+                        sys.exit() #
+                    elif event.key == pygame.K_ESCAPE: # Allow ESC to quit from main menu #
+                        self.running = False #
+                        pygame.quit() #
+                        sys.exit() #
         
     def emotion_detection_loop(self):
         """
@@ -1193,26 +1300,23 @@ class Game:
     
     def show_pause_menu(self):
         """Displays the pause menu overlay."""
-        # Create semi-transparent overlay
-        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
-        overlay.set_alpha(128) # 128 out of 255 for transparency
-        overlay.fill(BLACK)
-        self.screen.blit(overlay, (0, 0))
-        
-        # Draw pause menu text
-        title_font = pygame.font.Font(None, 72)
-        menu_font = pygame.font.Font(None, 48)
-        
-        pause_text = title_font.render("PAUSED", True, WHITE)
-        continue_text = menu_font.render("Press P to Continue", True, WHITE)
-        quit_text = menu_font.render("Press ESC to Quit", True, WHITE)
-        
-        # Blit text centered on the screen
-        self.screen.blit(pause_text, (SCREEN_WIDTH//2 - pause_text.get_width()//2, SCREEN_HEIGHT//2 - 100))
-        self.screen.blit(continue_text, (SCREEN_WIDTH//2 - continue_text.get_width()//2, SCREEN_HEIGHT//2))
-        self.screen.blit(quit_text, (SCREEN_WIDTH//2 - quit_text.get_width()//2, SCREEN_HEIGHT//2 + 50))
-        
-        pygame.display.flip() # Update the display to show the pause menu
+        current_screen_width = self.screen.get_width()
+        current_screen_height = self.screen.get_height()
+
+        overlay = pygame.Surface((current_screen_width, current_screen_height)) #
+        overlay.set_alpha(180) # 128 out of 255 for transparency #
+        overlay.fill(BLACK) #
+        self.screen.blit(overlay, (0, 0)) #
+
+        pause_text_surf = self.header_font.render("PAUSED", True, WHITE) #
+        continue_text_surf = self.menu_font.render("Press P to Continue", True, WHITE) #
+        quit_text_surf = self.menu_font.render("Press ESC for Main Menu", True, WHITE) # Changed to Main Menu
+
+        self.screen.blit(pause_text_surf, (current_screen_width//2 - pause_text_surf.get_width()//2, current_screen_height//2 - 100)) #
+        self.screen.blit(continue_text_surf, (current_screen_width//2 - continue_text_surf.get_width()//2, current_screen_height//2)) #
+        self.screen.blit(quit_text_surf, (current_screen_width//2 - quit_text_surf.get_width()//2, current_screen_height//2 + 60)) # Adjusted spacing
+
+        pygame.display.flip() # Update the display to show the pause menu #
 
     def draw(self):
         """
@@ -1220,88 +1324,108 @@ class Game:
         obstacles, collectibles, player, and UI elements.
         Also handles game over and pause screen overlays.
         """
-        self.draw_background()
-        
-        # Draw clouds
-        for cloud in self.clouds:
-            cloud.draw(self.screen)
-        
-        # Draw platforms
-        for platform in self.platforms:
-            platform.draw(self.screen)
-        
-        # Draw obstacles
-        for obstacle in self.obstacles:
-            obstacle.draw(self.screen)
-        
-        # Draw collectibles
-        for collectible in self.collectibles:
-            collectible.draw(self.screen)
-        
-        # Draw player
-        self.player.draw(self.screen)
-        
-        # Draw UI elements (emotion, score, distance, FPS)
-        emotion_text = self.small_font.render(f"Emotion: {self.emotion_detector.current_emotion}", True, BLACK)
-        score_text = self.font.render(f"Score: {self.score}", True, BLACK)
-        distance_text = self.small_font.render(f"Distance: {self.distance//10}m", True, BLACK)
-        
-        fps = int(self.clock.get_fps())
-        fps_text = self.small_font.render(f"FPS: {fps}", True, BLACK)
-        self.screen.blit(fps_text, (SCREEN_WIDTH - 100, 10))
-        
-        self.screen.blit(emotion_text, (10, 10))
-        self.screen.blit(score_text, (10, 35))
-        self.screen.blit(distance_text, (10, 65))
-        
-        # Display grow-up status and cooldown
-        if self.player.is_grown_up:
-            remaining_time = max(0, int(self.player.grow_up_duration - (time.time() - self.player.grow_up_start_time)))
-            grow_up_status_text = self.small_font.render(f"GROW UP! ({remaining_time}s remaining)", True, MARIO_RED)
-            self.screen.blit(grow_up_status_text, (SCREEN_WIDTH // 2 - grow_up_status_text.get_width() // 2, 10))
-        else:
-            cooldown_remaining = max(0, int(self.player.grow_up_cooldown - (time.time() - self.player.last_grow_up_time)))
-            if cooldown_remaining > 0:
-                cooldown_text = self.small_font.render(f"Grow Up Cooldown: {cooldown_remaining}s", True, BLACK)
-            else:
-                cooldown_text = self.small_font.render("Grow Up Ready!", True, MARIO_GROUND_TOP_GREEN)
-            self.screen.blit(cooldown_text, (SCREEN_WIDTH // 2 - cooldown_text.get_width() // 2, 10))
+        current_screen_width = self.screen.get_width() # Get current screen width
+        current_screen_height = self.screen.get_height() # Get current screen height
+
+        self.draw_background() #
+
+        for cloud in self.clouds: #
+            cloud.draw(self.screen) #
+
+        for platform in self.platforms: #
+            platform.draw(self.screen) #
+
+        for obstacle in self.obstacles: #
+            obstacle.draw(self.screen) #
+
+        for collectible in self.collectibles: #
+            collectible.draw(self.screen) #
+
+        self.player.draw(self.screen) #
+
+        # --- HUD Elements ---
+        # Emotion Text
+        emotion_text_surf = self.hud_font.render(f"Emotion: {self.emotion_detector.current_emotion}", True, BLACK) #
+        self.screen.blit(emotion_text_surf, (10, 10)) #
+
+        # Score Text
+        score_text_surf = self.hud_font.render(f"Score: {self.score}", True, BLACK) #
+        self.screen.blit(score_text_surf, (10, 10 + self.hud_font.get_height())) #
+
+        # Distance Text
+        distance_text_surf = self.hud_font.render(f"Distance: {self.distance//10}m", True, BLACK) #
+        self.screen.blit(distance_text_surf, (10, 10 + self.hud_font.get_height() * 2)) #
+
+        # FPS Counter
+        fps = int(self.clock.get_fps()) #
+        fps_text_surf = self.small_font.render(f"FPS: {fps}", True, BLACK) #
+        self.screen.blit(fps_text_surf, (current_screen_width - fps_text_surf.get_width() - 10, 10)) #
 
 
-        # Draw instructions based on control method
-        if not self.emotion_detector.model or not self.emotion_detector.webcam:
-            instruction_text = self.small_font.render("SPACE: Jump, RIGHT/D: Move Forward, LEFT/A: Move Backward, ENTER: Grow Up, P: Pause, Others: Stop", True, BLACK)
-            self.screen.blit(instruction_text, (10, SCREEN_HEIGHT - 30))
+        # Grow-Up Status and Cooldown Bar
+        bar_width = 200
+        bar_height = 15
+        bar_x = current_screen_width // 2 - bar_width // 2
+        bar_y = 10
+
+        if self.player.is_grown_up: #
+            remaining_time = max(0, self.player.grow_up_duration - (time.time() - self.player.grow_up_start_time)) #
+            status_text_surf = self.small_font.render(f"GROW UP!", True, MARIO_RED) #
+            self.screen.blit(status_text_surf, (bar_x + bar_width // 2 - status_text_surf.get_width() // 2, bar_y + bar_height)) #
+
+            fill_ratio = remaining_time / self.player.grow_up_duration
+            pygame.draw.rect(self.screen, (200,200,200), (bar_x, bar_y, bar_width, bar_height)) # Background
+            pygame.draw.rect(self.screen, MARIO_RED, (bar_x, bar_y, int(bar_width * fill_ratio), bar_height)) # Foreground
+            pygame.draw.rect(self.screen, BLACK, (bar_x, bar_y, bar_width, bar_height), 2) # Border
         else:
-            instruction_text1 = self.small_font.render("NEUTRAL: Stop, HAPPY: Move Forward, SURPRISE: Jump, SAD: Move Backward, ANGRY: Grow Up, P: Pause", True, BLACK)
-            self.screen.blit(instruction_text1, (10, SCREEN_HEIGHT - 50))
-            if not self.emotion_detector.face_detected:
-                instruction_text2 = self.small_font.render("NO FACE DETECTED - Character Stopped! Please look at the camera.", True, MARIO_RED)
+            cooldown_remaining = max(0, self.player.grow_up_cooldown - (time.time() - self.player.last_grow_up_time)) #
+            status_text_surf = self.small_font.render(f"Grow Up Ready!", True, MARIO_GROUND_TOP_GREEN) #
+            if cooldown_remaining > 0: #
+                status_text_surf = self.small_font.render(f"Cooldown", True, BLACK) #
+
+            self.screen.blit(status_text_surf, (bar_x + bar_width // 2 - status_text_surf.get_width() // 2, bar_y + bar_height))
+
+            fill_ratio = 1.0 - (cooldown_remaining / self.player.grow_up_cooldown) if self.player.grow_up_cooldown > 0 else 1.0
+            bar_color = MARIO_GROUND_TOP_GREEN if cooldown_remaining == 0 else BUTTON_HOVER
+
+            pygame.draw.rect(self.screen, (200,200,200), (bar_x, bar_y, bar_width, bar_height)) # Background
+            pygame.draw.rect(self.screen, bar_color, (bar_x, bar_y, int(bar_width * fill_ratio), bar_height)) # Foreground
+            pygame.draw.rect(self.screen, BLACK, (bar_x, bar_y, bar_width, bar_height), 2) # Border
+
+
+        # Instructions
+        instruction_y_start = current_screen_height - 30 #
+        if not self.emotion_detector.model or not self.emotion_detector.webcam: #
+            instruction_text_surf = self.small_font.render("Arrows/D/A: Move, SPACE: Jump, ENTER: Grow, P: Pause", True, BLACK) #
+            self.screen.blit(instruction_text_surf, (10, instruction_y_start)) #
+        else:
+            instruction_text1_surf = self.small_font.render("HAPPY: ->, SURPRISE: Jump, SAD: <-, ANGRY: Grow, P: Pause", True, BLACK) #
+            self.screen.blit(instruction_text1_surf, (10, instruction_y_start - self.small_font.get_height() - 2)) #
+
+            if not self.emotion_detector.face_detected: #
+                instruction_text2_surf = self.small_font.render("NO FACE DETECTED - Look at camera!", True, MARIO_RED) #
             else:
-                instruction_text2 = self.small_font.render("Look at the camera and show your emotions!", True, BLACK)
-            self.screen.blit(instruction_text2, (10, SCREEN_HEIGHT - 30))
-        
-        # Game over screen overlay
-        if self.game_over:
-            overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
-            overlay.set_alpha(128) # Semi-transparent overlay
-            overlay.fill(BLACK)
-            self.screen.blit(overlay, (0, 0))
-            
-            game_over_text = self.font.render("GAME OVER", True, WHITE)
-            final_score_text = self.font.render(f"Final Score: {self.score}", True, WHITE)
-            restart_text = self.small_font.render("Press R to restart or ESC to quit", True, WHITE)
-            
-            # Blit game over text centered
-            self.screen.blit(game_over_text, (SCREEN_WIDTH//2 - game_over_text.get_width()//2, SCREEN_HEIGHT//2 - 60))
-            self.screen.blit(final_score_text, (SCREEN_WIDTH//2 - final_score_text.get_width()//2, SCREEN_HEIGHT//2 - 20))
-            self.screen.blit(restart_text, (SCREEN_WIDTH//2 - restart_text.get_width()//2, SCREEN_HEIGHT//2 + 20))
-        
-        # Show pause menu if game is paused (drawn on top of everything else)
-        if self.paused:
-            self.show_pause_menu()
-        
-        pygame.display.flip() # Update the full display Surface to the screen
+                instruction_text2_surf = self.small_font.render("Show emotions to control!", True, BLACK) #
+            self.screen.blit(instruction_text2_surf, (10, instruction_y_start)) #
+
+        if self.game_over: #
+            overlay = pygame.Surface((current_screen_width, current_screen_height)) #
+            overlay.set_alpha(180) # Semi-transparent overlay #
+            overlay.fill(BLACK) #
+            self.screen.blit(overlay, (0, 0)) #
+
+            game_over_surf = self.title_font.render("GAME OVER", True, MARIO_RED) #
+            final_score_surf = self.menu_font.render(f"Final Score: {self.score}", True, WHITE) #
+            restart_surf = self.small_font.render("Press R to restart or ESC to quit", True, WHITE) #
+
+            self.screen.blit(game_over_surf, (current_screen_width//2 - game_over_surf.get_width()//2, current_screen_height//2 - 80)) #
+            self.screen.blit(final_score_surf, (current_screen_width//2 - final_score_surf.get_width()//2, current_screen_height//2 - 10)) #
+            self.screen.blit(restart_surf, (current_screen_width//2 - restart_surf.get_width()//2, current_screen_height//2 + 40)) #
+
+        if self.paused: #
+            self.show_pause_menu() #
+
+        pygame.display.flip() # Update the full display Surface to the screen #
     
     def restart_game(self):
         """Resets all game elements to their initial state for a new game."""
