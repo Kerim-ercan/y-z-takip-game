@@ -67,7 +67,7 @@ class Button:
     def handle_event(self, event):
         if event.type == pygame.MOUSEMOTION:
             self.is_hovered = self.rect.collidepoint(event.pos)
-        elif event.type == pygame.MOUSEBUTTONDOWN:
+        elif event.type == pygame.MOUSEBUTTONUP: # Changed to MOUSEBUTTONUP for more reliable clicks
             if self.is_hovered:
                 return True
         return False
@@ -455,7 +455,7 @@ class Game:
                     start_y + i * (button_height + button_spacing),
                     button_width,
                     button_height,
-                    f"{size_name} ({SCREEN_SIZES[size_name][0]}x{SCREEN_SIZES[size_name][1]})"
+                    f"{size_name} ({SCREEN_SIZES[size_name][0]}x{SCREEN_SIZES[size_name][1]})" if size_name != "Fullscreen" else f"{size_name}"
                 )
                 size_buttons.append((button, size_name))
             back_button = Button(
@@ -486,17 +486,16 @@ class Game:
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
                         return
-                elif event.type == pygame.MOUSEMOTION:
-                    for button, _ in size_buttons:
-                        button.handle_event(event)
-                    back_button.handle_event(event)
-                elif event.type == pygame.MOUSEBUTTONDOWN:
-                    for button, size_name in size_buttons:
-                        if button.handle_event(event):
-                            self.screen = self.settings.apply_screen_size(size_name)
-                            # No need to return, loop will recalculate positions
-                    if back_button.handle_event(event):
-                        return
+                for button, size_name in size_buttons:
+                    if button.handle_event(event):
+                        self.screen = self.settings.apply_screen_size(size_name)
+                        # Re-calculate positions after screen size change
+                        screen_width = self.screen.get_width()
+                        screen_height = self.screen.get_height()
+                        start_y = screen_height // 2 - (len(SCREEN_SIZES) * (button_height + button_spacing)) // 2
+                        break # Exit inner loop once a button is handled
+                if back_button.handle_event(event):
+                    return
 
     def show_main_menu(self):
         button_width = 300
