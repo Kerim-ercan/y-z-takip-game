@@ -32,6 +32,35 @@ MARIO_YELLOW = (255, 255, 0) # Coins/Stars
 BLACK = (0, 0, 0)
 GOOMBA_BROWN = (160, 82, 45) # Goomba body color
 GOOMBA_FEET = (80, 40, 20) # Goomba feet color
+BUTTON_HOVER = (100, 100, 100)  # Color for button hover state
+
+class Button:
+    def __init__(self, x, y, width, height, text, font_size=48, text_color=WHITE, button_color=MARIO_GROUND_TOP_GREEN):
+        self.rect = pygame.Rect(x, y, width, height)
+        self.text = text
+        self.font = pygame.font.Font(None, font_size)
+        self.text_color = text_color
+        self.button_color = button_color
+        self.is_hovered = False
+        
+    def draw(self, screen):
+        # Draw button background
+        color = BUTTON_HOVER if self.is_hovered else self.button_color
+        pygame.draw.rect(screen, color, self.rect, border_radius=10)
+        pygame.draw.rect(screen, BLACK, self.rect, 2, border_radius=10)  # Button border
+        
+        # Draw button text
+        text_surface = self.font.render(self.text, True, self.text_color)
+        text_rect = text_surface.get_rect(center=self.rect.center)
+        screen.blit(text_surface, text_rect)
+        
+    def handle_event(self, event):
+        if event.type == pygame.MOUSEMOTION:
+            self.is_hovered = self.rect.collidepoint(event.pos)
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            if self.is_hovered:
+                return True
+        return False
 
 class EmotionDetector:
     def __init__(self):
@@ -358,30 +387,63 @@ class Game:
             self.emotion_thread.start()
 
     def show_main_menu(self):
+        # Create menu buttons
+        button_width = 300
+        button_height = 60
+        button_spacing = 20
+        start_y = SCREEN_HEIGHT // 2 - button_height
+        
+        start_button = Button(
+            SCREEN_WIDTH//2 - button_width//2,
+            start_y,
+            button_width,
+            button_height,
+            "Start Game"
+        )
+        
+        quit_button = Button(
+            SCREEN_WIDTH//2 - button_width//2,
+            start_y + button_height + button_spacing,
+            button_width,
+            button_height,
+            "Quit Game"
+        )
+        
+        # Title text
         title_font = pygame.font.Font(None, 72)
-        button_font = pygame.font.Font(None, 48)
-
+        title_text = title_font.render("Mario-like Emotion Platformer", True, BLACK)
+        title_rect = title_text.get_rect(center=(SCREEN_WIDTH//2, 150))
+        
+        # Menu loop
         while True:
-            self.screen.fill(MARIO_SKY_BLUE) # Use Mario sky color for menu
-
-            title_text = title_font.render("Mario-like Emotion Platformer", True, BLACK)
-            start_text = button_font.render("Press ENTER to Start", True, MARIO_GROUND_TOP_GREEN)
-            quit_text = button_font.render("Press ESC to Quit", True, MARIO_GROUND_TOP_GREEN)
-
-            self.screen.blit(title_text, (SCREEN_WIDTH//2 - title_text.get_width()//2, 150))
-            self.screen.blit(start_text, (SCREEN_WIDTH//2 - start_text.get_width()//2, 300))
-            self.screen.blit(quit_text, (SCREEN_WIDTH//2 - quit_text.get_width()//2, 370))
-
+            self.screen.fill(MARIO_SKY_BLUE)
+            
+            # Draw title
+            self.screen.blit(title_text, title_rect)
+            
+            # Draw and handle buttons
+            start_button.draw(self.screen)
+            quit_button.draw(self.screen)
+            
             pygame.display.flip()
-
+            
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.running = False
                     pygame.quit()
                     sys.exit()
-                elif event.type == pygame.KEYDOWN:
+                
+                if start_button.handle_event(event):
+                    return  # Start the game
+                if quit_button.handle_event(event):
+                    self.running = False
+                    pygame.quit()
+                    sys.exit()
+                
+                # Keep keyboard controls as backup
+                if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_RETURN:
-                        return
+                        return  # Start game
                     elif event.key == pygame.K_ESCAPE:
                         self.running = False
                         pygame.quit()
