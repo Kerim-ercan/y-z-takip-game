@@ -27,8 +27,8 @@ SCREEN_HEIGHT = 600
 FPS = 60
 GRAVITY = 0.8
 JUMP_STRENGTH = -15
-PLATFORM_SPEED = 3
-PLAYER_SPEED = 4  # Increased player speed for a more dynamic feel
+PLATFORM_SPEED = 6
+PLAYER_SPEED = 3  # Increased player speed for a more dynamic feel
 
 # Colors (Mario-like palette)
 MARIO_SKY_BLUE = (92, 148, 252) # Brighter blue for sky
@@ -207,62 +207,41 @@ class Player:
         self.jump_count = 0
         self.max_jumps = 2
         self.last_emotion = 'neutral'  # Track last emotion to prevent continuous jumping
-        
+    
     def update(self, emotion, platforms):
         # Handle emotion-based controls
         if emotion == 'neutral':
-            # Stop horizontal movement
             self.vel_x = 0
         elif emotion == 'happy':
-            # Move forward
             self.vel_x = PLAYER_SPEED
         elif emotion == 'surprise':
-            # Move forward AND jump when surprised
             self.vel_x = PLAYER_SPEED
             if emotion != self.last_emotion and self.jump_count < self.max_jumps:
-                # Jump only when emotion changes to surprise (prevents continuous jumping)
                 self.vel_y = JUMP_STRENGTH
                 self.jump_count += 1
                 self.on_ground = False
-        elif emotion == 'sad': # New condition for 'sad' emotion
-            # Move backward
+        elif emotion == 'sad':
             self.vel_x = -PLAYER_SPEED
-        
-        # Store last emotion
         self.last_emotion = emotion
-        
-        # Apply gravity
+        # Only apply gravity and vertical movement
         self.vel_y += GRAVITY
-        
-        # Update position
-        self.x += self.vel_x
         self.y += self.vel_y
-        
-        # Keep player within screen bounds horizontally
-        if self.x < 0:
-            self.x = 0
-        elif self.x + self.width > SCREEN_WIDTH:
-            self.x = SCREEN_WIDTH - self.width
-        
-        # Platform collision
+        # Keep player horizontally centered
+        self.x = SCREEN_WIDTH // 2 - self.width // 2
+        # Platform collision (vertical only)
         self.on_ground = False
         for platform in platforms:
-            # Check if player is colliding with platform from above
             if (self.x + self.width > platform.x and 
                 self.x < platform.x + platform.width and
                 self.y + self.height > platform.y and 
-                self.y + self.height < platform.y + platform.height + 20 and # Small buffer for collision detection
-                self.vel_y > 0): # Only if falling
-                
-                self.y = platform.y - self.height # Snap player to top of platform
-                self.vel_y = 0 # Stop vertical movement
-                self.on_ground = True # Player is on ground
-                self.jump_count = 0 # Reset jump count
-        
-        # Screen boundaries (game over if player falls off screen)
+                self.y + self.height < platform.y + platform.height + 20 and
+                self.vel_y > 0):
+                self.y = platform.y - self.height
+                self.vel_y = 0
+                self.on_ground = True
+                self.jump_count = 0
         if self.y > SCREEN_HEIGHT:
-            return False  # Game over
-        
+            return False
         return True
     
     def draw(self, screen):
@@ -304,10 +283,8 @@ class Platform:
         for i in range(0, 30, 10):
             pygame.draw.line(self.cached_surf, (150, 100, 50), (0, self.height + i), (self.width, self.height + i), 1)
     
-    def update(self, move_platforms=True):
-        # Only move platforms when specified (for static world when player stops)
-        if move_platforms:
-            self.x -= PLATFORM_SPEED
+    def update(self, effective_platform_speed=0): # Modified to take effective_platform_speed
+        self.x += effective_platform_speed
 
     def draw(self, screen):
         screen.blit(self.cached_surf, (self.x, self.y))
@@ -319,9 +296,8 @@ class Obstacle:
         self.width = 30
         self.height = 30
         
-    def update(self, move_obstacles=True):
-        if move_obstacles:
-            self.x -= PLATFORM_SPEED
+    def update(self, effective_platform_speed=0): # Modified to take effective_platform_speed
+        self.x += effective_platform_speed
         
     def draw(self, screen):
         # Draw a simple Goomba-like obstacle
@@ -335,6 +311,30 @@ class Obstacle:
         pygame.draw.circle(screen, WHITE, (int(self.x + self.width * 0.7), int(self.y + self.height * 0.3)), 3)
         pygame.draw.circle(screen, BLACK, (int(self.x + self.width * 0.7), int(self.y + self.height * 0.3)), 1)
 
+class MovingObstacle(Obstacle):
+    def __init__(self, x, y, patrol_range=100, move_speed=2):
+        super().__init__(x, y)
+        self.start_x = x
+        self.end_x = x + patrol_range
+        self.move_speed = move_speed
+        self.direction = 1 # 1 for right, -1 for left
+        
+    def update(self, effective_platform_speed=0):
+        super().update(effective_platform_speed) # Apply world scrolling
+        
+        # Apply local movement
+        self.x += self.move_speed * self.direction
+        
+        # Reverse direction if it hits patrol limits
+        if self.direction == 1 and self.x >= self.end_x:
+            self.direction = -1
+        elif self.direction == -1 and self.x <= self.start_x:
+            self.direction = 1
+        
+        # Adjust start_x and end_x to keep relative patrol range with world movement
+        self.start_x += effective_platform_speed
+        self.end_x += effective_platform_speed
+
 class Cloud:
     def __init__(self, x, y, size):
         self.x = x
@@ -342,11 +342,10 @@ class Cloud:
         self.size = size
         self.speed = random.uniform(0.5, 1.5)
         
-    def update(self, move_clouds=True):
-        if move_clouds:
-            self.x -= self.speed
-            if self.x < -self.size:
-                self.x = SCREEN_WIDTH + random.randint(50, 200)
+    def update(self): # Removed move_clouds parameter as clouds always move
+        self.x -= self.speed * 0.5 # Slower cloud movement
+        if self.x < -self.size:
+            self.x = SCREEN_WIDTH + random.randint(50, 200)
         
     def draw(self, screen):
         # Draw fluffy cloud
@@ -362,9 +361,8 @@ class Collectible:
         self.height = 20
         self.bounce = 0
         
-    def update(self, move_collectibles=True):
-        if move_collectibles:
-            self.x -= PLATFORM_SPEED
+    def update(self, effective_platform_speed=0): # Modified to take effective_platform_speed
+        self.x += effective_platform_speed
         self.bounce += 0.1 # Slower bounce for coin/star
         
     def draw(self, screen):
@@ -598,10 +596,21 @@ class Game:
         # Spawn obstacles on existing platforms
         for platform in self.platforms:
             # Only spawn on platforms that are visible and not too close to the edge
-            if (platform.x > SCREEN_WIDTH - 200 and platform.x < SCREEN_WIDTH - 100 and
-                random.random() < 0.01): # Lower chance to spawn obstacles
-                self.obstacles.append(Obstacle(platform.x + random.randint(20, platform.width - 50), 
-                                             platform.y - 30)) # Position above platform
+            if (platform.x > SCREEN_WIDTH - 200 and platform.x < SCREEN_WIDTH - 100):
+                if random.random() < 0.005: # Lower chance to spawn static obstacles
+                    self.obstacles.append(Obstacle(platform.x + random.randint(20, platform.width - 50), 
+                                                 platform.y - 30)) # Position above platform
+                elif random.random() < 0.007: # Slightly higher chance for moving obstacles
+                    # Ensure patrol range fits within the platform or a reasonable area
+                    patrol_start_x = platform.x + 20
+                    patrol_end_x = platform.x + platform.width - 50
+                    if patrol_end_x - patrol_start_x > 50: # Ensure enough space for patrol
+                        self.obstacles.append(MovingObstacle(
+                            patrol_start_x,
+                            platform.y - 30,
+                            patrol_range=random.randint(50, min(100, int(platform.width * 0.5))),
+                            move_speed=random.uniform(1, 2.5)
+                        ))
     
     def spawn_collectible(self):
         # Spawn collectibles on existing platforms
@@ -639,7 +648,7 @@ class Game:
         
         current_emotion = self.emotion_detector.current_emotion
         
-        # Update player position and check for game over condition
+        # Player update (vertical only, horizontal velocity used for world scroll)
         if not self.player.update(current_emotion, self.platforms):
             self.game_over = True
             return
@@ -649,52 +658,20 @@ class Game:
             self.game_over = True
             return
         
-        # Determine if the game world should scroll (when player is moving forward)
-        # The world should move forward if happy/surprise, backward if sad, and stop if neutral.
-        # This logic needs to be adjusted based on the new 'sad' movement.
-        # If the player is moving backward (sad), the world should effectively move forward
-        # relative to the player's movement, but the platforms themselves will move
-        # based on the player's velocity.
-        
-        # Let's simplify: if player.vel_x is positive, world moves backward (normal scrolling)
-        # If player.vel_x is negative, world moves forward (reverse scrolling)
-        # If player.vel_x is zero, world stands still.
-        
-        # In a side-scroller, the world usually moves opposite to the player's intended direction.
-        # If player moves right, world moves left. If player moves left, world moves right.
-        # However, since the player's x position is capped at screen bounds, we need to
-        # decide if the *platforms* themselves should move.
-        
-        # For a Mario-like game, the world scrolls *left* when Mario moves *right*.
-        # If Mario moves *left*, the world *stops* scrolling left, or scrolls *right* if he's
-        # far enough left on the screen.
-        
-        # Let's adjust the world movement based on player's horizontal velocity.
-        # If player is moving right (happy/surprise), platforms move left (normal scrolling)
-        # If player is moving left (sad), platforms move right (reverse scrolling)
-        # If player is stationary (neutral), platforms stop.
-
-        # The current PLATFORM_SPEED is always subtracting from platform.x.
-        # We need to make it dynamic based on player's vel_x.
-
-        # Calculate effective platform movement speed
-        effective_platform_speed = 0
-        if current_emotion == 'happy' or current_emotion == 'surprise':
-            effective_platform_speed = -PLATFORM_SPEED # Platforms move left
-        elif current_emotion == 'sad':
-            effective_platform_speed = PLATFORM_SPEED # Platforms move right (to simulate player going left)
+        # Use player.vel_x for world movement
+        effective_platform_speed = -self.player.vel_x
         
         # Update platforms
         for platform in self.platforms[:]:
-            platform.x += effective_platform_speed # Apply dynamic speed
-            if platform.x + platform.width < 0 and effective_platform_speed < 0: # Remove if off left and moving left
+            platform.update(effective_platform_speed)
+            if platform.x + platform.width < 0 and effective_platform_speed < 0:
                 self.platforms.remove(platform)
-            elif platform.x > SCREEN_WIDTH and effective_platform_speed > 0: # Remove if off right and moving right
+            elif platform.x > SCREEN_WIDTH and effective_platform_speed > 0:
                 self.platforms.remove(platform)
         
-        # Update obstacles
+        # Update obstacles (including moving ones)
         for obstacle in self.obstacles[:]:
-            obstacle.x += effective_platform_speed
+            obstacle.update(effective_platform_speed)
             if obstacle.x + obstacle.width < 0 and effective_platform_speed < 0:
                 self.obstacles.remove(obstacle)
             elif obstacle.x > SCREEN_WIDTH and effective_platform_speed > 0:
@@ -702,7 +679,7 @@ class Game:
         
         # Update collectibles
         for collectible in self.collectibles[:]:
-            collectible.x += effective_platform_speed
+            collectible.update(effective_platform_speed)
             if collectible.x + collectible.width < 0 and effective_platform_speed < 0:
                 self.collectibles.remove(collectible)
             elif collectible.x > SCREEN_WIDTH and effective_platform_speed > 0:
@@ -710,26 +687,17 @@ class Game:
         
         # Update clouds (clouds should always move left, but perhaps slower)
         for cloud in self.clouds:
-            # Clouds always move left, regardless of player direction, but slower than platforms
-            cloud.x -= cloud.speed * 0.5 # Slower cloud movement
-            if cloud.x < -cloud.size:
-                cloud.x = SCREEN_WIDTH + random.randint(50, 200)
+            cloud.update() # Clouds update independently
         
-        # Spawn new objects only when moving right (normal scrolling)
-        # Spawning logic needs to consider if the world is moving forward or backward
-        # For now, let's keep spawning only when player is moving forward (happy/surprise)
+        # Spawning logic
         if current_emotion == 'happy' or current_emotion == 'surprise':
             self.spawn_platform()
             self.spawn_obstacle()
             self.spawn_collectible()
-            
-            # Update game state (distance and score)
-            self.distance += PLATFORM_SPEED
-            if self.distance % 100 == 0: # Award score for distance traveled
+            self.distance += abs(self.player.vel_x)
+            if self.distance % 100 == 0:
                 self.score += 1
         elif current_emotion == 'sad':
-            # If moving backward, we might want to "un-spawn" or ensure no new objects appear
-            # or even have a limited "backtrack" area. For simplicity, no new spawns when sad.
             pass # No new spawns when moving backward
     
     def draw_background(self):
