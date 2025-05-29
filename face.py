@@ -7,9 +7,19 @@ import threading
 import time
 import random
 import math
+import json
+import os
 
 # Initialize Pygame
 pygame.init()
+
+# Default screen sizes
+SCREEN_SIZES = {
+    "Small": (800, 600),
+    "Medium": (1024, 768),
+    "Large": (1280, 720),
+    "Fullscreen": (0, 0)  # Special case for fullscreen
+}
 
 # Game constants
 SCREEN_WIDTH = 800
@@ -61,6 +71,45 @@ class Button:
             if self.is_hovered:
                 return True
         return False
+
+class Settings:
+    def __init__(self):
+        self.settings_file = "game_settings.json"
+        self.current_size = "Medium"  # Default size
+        self.load_settings()
+        
+    def load_settings(self):
+        try:
+            if os.path.exists(self.settings_file):
+                with open(self.settings_file, 'r') as f:
+                    settings = json.load(f)
+                    self.current_size = settings.get('screen_size', 'Medium')
+        except Exception as e:
+            print(f"Error loading settings: {e}")
+    
+    def save_settings(self):
+        try:
+            with open(self.settings_file, 'w') as f:
+                json.dump({'screen_size': self.current_size}, f)
+        except Exception as e:
+            print(f"Error saving settings: {e}")
+    
+    def apply_screen_size(self, size_name):
+        self.current_size = size_name
+        self.save_settings()
+        width, height = SCREEN_SIZES[size_name]
+        if size_name == "Fullscreen":
+            screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+            width, height = screen.get_size()
+        else:
+            screen = pygame.display.set_mode((width, height))
+        
+        # Update global screen dimensions
+        global SCREEN_WIDTH, SCREEN_HEIGHT
+        SCREEN_WIDTH = width
+        SCREEN_HEIGHT = height
+        
+        return screen
 
 class EmotionDetector:
     def __init__(self):
@@ -349,23 +398,22 @@ def show_loading_screen(screen):
 
 class Game:
     def __init__(self):
-        self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-        pygame.display.set_caption("Mario-like Emotion Platformer") # Updated title
+        self.settings = Settings()
+        self.screen = self.settings.apply_screen_size(self.settings.current_size)
+        pygame.display.set_caption("Mario-like Emotion Platformer")
         self.clock = pygame.time.Clock()
         self.running = True
-        self.paused = False  # Add paused state
+        self.paused = False
         
         # Show loading screen
         show_loading_screen(self.screen)
+        
         # Initialize game objects
         self.player = Player(100, 300)
         self.emotion_detector = EmotionDetector()
         
         # Game objects
-        # Initial platforms for a starting area
-        # Create a long ground platform at the bottom
-        self.platforms = [Platform(0, SCREEN_HEIGHT - 50, SCREEN_WIDTH * 2)] # Long ground platform
-        # Add a few initial floating platforms for variety
+        self.platforms = [Platform(0, SCREEN_HEIGHT - 50, SCREEN_WIDTH * 2)]
         self.platforms.append(Platform(SCREEN_WIDTH * 0.8, SCREEN_HEIGHT - 150, 150))
         self.platforms.append(Platform(SCREEN_WIDTH * 1.2, SCREEN_HEIGHT - 250, 200))
         
@@ -383,48 +431,51 @@ class Game:
         # Start emotion detection in a separate thread
         if self.emotion_detector.model and self.emotion_detector.webcam:
             self.emotion_thread = threading.Thread(target=self.emotion_detection_loop)
-            self.emotion_thread.daemon = True # Daemonize thread so it exits with main program
+            self.emotion_thread.daemon = True
             self.emotion_thread.start()
 
-    def show_main_menu(self):
-        # Create menu buttons
+    def show_settings_menu(self):
         button_width = 300
         button_height = 60
         button_spacing = 20
-        start_y = SCREEN_HEIGHT // 2 - button_height
         
-        start_button = Button(
-            SCREEN_WIDTH//2 - button_width//2,
-            start_y,
-            button_width,
-            button_height,
-            "Start Game"
-        )
+        # Create size option buttons (positions will be recalculated each frame)
+        size_names = list(SCREEN_SIZES.keys())
         
-        quit_button = Button(
-            SCREEN_WIDTH//2 - button_width//2,
-            start_y + button_height + button_spacing,
-            button_width,
-            button_height,
-            "Quit Game"
-        )
-        
-        # Title text
-        title_font = pygame.font.Font(None, 72)
-        title_text = title_font.render("Mario-like Emotion Platformer", True, BLACK)
-        title_rect = title_text.get_rect(center=(SCREEN_WIDTH//2, 150))
-        
-        # Menu loop
         while True:
+            screen_width = self.screen.get_width()
+            screen_height = self.screen.get_height()
+            start_y = screen_height // 2 - (len(SCREEN_SIZES) * (button_height + button_spacing)) // 2
+            
+            # Recreate buttons each frame for correct centering
+            size_buttons = []
+            for i, size_name in enumerate(size_names):
+                button = Button(
+                    screen_width//2 - button_width//2,
+                    start_y + i * (button_height + button_spacing),
+                    button_width,
+                    button_height,
+                    f"{size_name} ({SCREEN_SIZES[size_name][0]}x{SCREEN_SIZES[size_name][1]})"
+                )
+                size_buttons.append((button, size_name))
+            back_button = Button(
+                screen_width//2 - button_width//2,
+                start_y + len(SCREEN_SIZES) * (button_height + button_spacing),
+                button_width,
+                button_height,
+                "Back"
+            )
+            
+            # Title text
+            title_font = pygame.font.Font(None, 72)
+            title_text = title_font.render("Settings", True, BLACK)
+            title_rect = title_text.get_rect(center=(screen_width//2, 150))
+            
             self.screen.fill(MARIO_SKY_BLUE)
-            
-            # Draw title
             self.screen.blit(title_text, title_rect)
-            
-            # Draw and handle buttons
-            start_button.draw(self.screen)
-            quit_button.draw(self.screen)
-            
+            for button, _ in size_buttons:
+                button.draw(self.screen)
+            back_button.draw(self.screen)
             pygame.display.flip()
             
             for event in pygame.event.get():
@@ -432,15 +483,76 @@ class Game:
                     self.running = False
                     pygame.quit()
                     sys.exit()
-                
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        return
+                elif event.type == pygame.MOUSEMOTION:
+                    for button, _ in size_buttons:
+                        button.handle_event(event)
+                    back_button.handle_event(event)
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    for button, size_name in size_buttons:
+                        if button.handle_event(event):
+                            self.screen = self.settings.apply_screen_size(size_name)
+                            # No need to return, loop will recalculate positions
+                    if back_button.handle_event(event):
+                        return
+
+    def show_main_menu(self):
+        button_width = 300
+        button_height = 60
+        button_spacing = 20
+        
+        while True:
+            screen_width = self.screen.get_width()
+            screen_height = self.screen.get_height()
+            start_y = screen_height // 2 - button_height
+            
+            start_button = Button(
+                screen_width//2 - button_width//2,
+                start_y,
+                button_width,
+                button_height,
+                "Start Game"
+            )
+            settings_button = Button(
+                screen_width//2 - button_width//2,
+                start_y + button_height + button_spacing,
+                button_width,
+                button_height,
+                "Settings"
+            )
+            quit_button = Button(
+                screen_width//2 - button_width//2,
+                start_y + (button_height + button_spacing) * 2,
+                button_width,
+                button_height,
+                "Quit Game"
+            )
+            title_font = pygame.font.Font(None, 72)
+            title_text = title_font.render("Mario-like Emotion Platformer", True, BLACK)
+            title_rect = title_text.get_rect(center=(screen_width//2, 150))
+            
+            self.screen.fill(MARIO_SKY_BLUE)
+            self.screen.blit(title_text, title_rect)
+            start_button.draw(self.screen)
+            settings_button.draw(self.screen)
+            quit_button.draw(self.screen)
+            pygame.display.flip()
+            
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    self.running = False
+                    pygame.quit()
+                    sys.exit()
                 if start_button.handle_event(event):
                     return  # Start the game
+                if settings_button.handle_event(event):
+                    self.show_settings_menu()  # Show settings menu
                 if quit_button.handle_event(event):
                     self.running = False
                     pygame.quit()
                     sys.exit()
-                
-                # Keep keyboard controls as backup
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_RETURN:
                         return  # Start game
@@ -448,7 +560,7 @@ class Game:
                         self.running = False
                         pygame.quit()
                         sys.exit()
-    
+
     def emotion_detection_loop(self):
         # Continuously detect emotion while the game is running
         while self.running:
