@@ -94,29 +94,40 @@ class Button:
 
 class Settings:
     """
-    Manages game settings, including screen size.
+    Manages game settings, including screen size and sound volume.
     Loads and saves settings to a JSON file.
     """
     def __init__(self):
         self.settings_file = "game_settings.json"
         self.current_size = "Medium"  # Default size
+        self.master_volume = 0.5 # Default master volume (0.0 to 1.0)
+        self.music_volume = 0.5 # Default music volume
+        self.sfx_volume = 0.5 # Default sound effects volume
         self.load_settings()
         
     def load_settings(self):
-        """Loads screen size setting from file."""
+        """Loads screen size and volume settings from file."""
         try:
             if os.path.exists(self.settings_file):
                 with open(self.settings_file, 'r') as f:
                     settings = json.load(f)
                     self.current_size = settings.get('screen_size', 'Medium')
+                    self.master_volume = settings.get('master_volume', 0.5)
+                    self.music_volume = settings.get('music_volume', 0.5)
+                    self.sfx_volume = settings.get('sfx_volume', 0.5)
         except Exception as e:
             print(f"Error loading settings: {e}")
     
     def save_settings(self):
-        """Saves current screen size setting to file."""
+        """Saves current screen size and volume settings to file."""
         try:
             with open(self.settings_file, 'w') as f:
-                json.dump({'screen_size': self.current_size}, f)
+                json.dump({
+                    'screen_size': self.current_size,
+                    'master_volume': self.master_volume,
+                    'music_volume': self.music_volume,
+                    'sfx_volume': self.sfx_volume
+                }, f, indent=4) # Use indent for readability
         except Exception as e:
             print(f"Error saving settings: {e}")
     
@@ -143,6 +154,18 @@ class Settings:
         SCREEN_HEIGHT = height
         
         return screen
+    
+    def set_master_volume(self, volume):
+        self.master_volume = max(0.0, min(1.0, volume))
+        self.save_settings()
+
+    def set_music_volume(self, volume):
+        self.music_volume = max(0.0, min(1.0, volume))
+        self.save_settings()
+
+    def set_sfx_volume(self, volume):
+        self.sfx_volume = max(0.0, min(1.0, volume))
+        self.save_settings()
 
 class EmotionDetector:
     """
@@ -571,10 +594,11 @@ def show_loading_screen(screen):
 class GameSounds:
     """
     Manages loading and playing game sound effects and music.
+    Applies master, music, and sound effect volume settings.
     """
-    def __init__(self):
+    def __init__(self, settings): # Pass settings object to GameSounds
+        self.settings = settings
         self.sounds_dir = "sounds" # Directory where sound files are stored
-        self.music = None
         self.music_loaded = False # Track if music is loaded
         self.jump_sound = None
         self.coin_sound = None
@@ -582,7 +606,8 @@ class GameSounds:
         self.stomp_sound = None
         self.power_up_sound = None
         self.load_sounds()
-    
+        self.apply_volumes() # Apply initial volumes after loading
+
     def load_sounds(self):
         """Loads all sound effects and background music."""
         try:
@@ -621,6 +646,18 @@ class GameSounds:
         else:
             print(f"Sound effect file not found: {filepath}")
             return None
+
+    def apply_volumes(self):
+        """Applies the current volume settings to music and all loaded sound effects."""
+        overall_music_volume = self.settings.master_volume * self.settings.music_volume
+        pygame.mixer.music.set_volume(overall_music_volume)
+
+        overall_sfx_volume = self.settings.master_volume * self.settings.sfx_volume
+        if self.jump_sound: self.jump_sound.set_volume(overall_sfx_volume)
+        if self.coin_sound: self.coin_sound.set_volume(overall_sfx_volume)
+        if self.game_over_sound: self.game_over_sound.set_volume(overall_sfx_volume)
+        if self.stomp_sound: self.stomp_sound.set_volume(overall_sfx_volume)
+        if self.power_up_sound: self.power_up_sound.set_volume(overall_sfx_volume)
 
     def play_music(self):
         """Plays the background music, looping indefinitely."""
@@ -675,8 +712,8 @@ class Game:
         # Show loading screen before heavy initialization
         show_loading_screen(self.screen)
         
-        # Initialize sound manager
-        self.game_sounds = GameSounds()
+        # Initialize sound manager, passing the settings object
+        self.game_sounds = GameSounds(self.settings)
 
         # Initialize game objects
         self.player = Player(100, 300)
@@ -745,7 +782,7 @@ class Game:
 
     def show_settings_menu(self):
         """
-        Displays the settings menu, allowing the user to change screen size.
+        Displays the settings menu, allowing the user to change screen size and sound volume.
         Uses keyboard input for selection.
         """
         button_width = 300
@@ -754,12 +791,20 @@ class Game:
         
         size_names = list(SCREEN_SIZES.keys())
         
+        # Keys for volume control
+        KEY_MASTER_VOL_UP = pygame.K_KP_PLUS # Numpad +
+        KEY_MASTER_VOL_DOWN = pygame.K_KP_MINUS # Numpad -
+        KEY_MUSIC_VOL_UP = pygame.K_UP # Up arrow
+        KEY_MUSIC_VOL_DOWN = pygame.K_DOWN # Down arrow
+        KEY_SFX_VOL_UP = pygame.K_RIGHT # Right arrow
+        KEY_SFX_VOL_DOWN = pygame.K_LEFT # Left arrow
+
         while True:
             screen_width = self.screen.get_width()
             screen_height = self.screen.get_height()
             
-            total_button_area_height = (len(SCREEN_SIZES) + 1) * (button_height + button_spacing)
-            start_y = screen_height // 2 - (total_button_area_height // 2)
+            # Calculate starting Y position for screen size buttons
+            start_y_screens = screen_height // 2 - (len(SCREEN_SIZES) * (button_height + button_spacing)) // 2
             
             size_buttons_with_keys = [] # Store button and its associated key
             for i, size_name in enumerate(size_names):
@@ -768,17 +813,30 @@ class Game:
                               if size_name != "Fullscreen" else f"{i+1}. {size_name}"
                 button = Button(
                     screen_width//2 - button_width//2,
-                    start_y + i * (button_height + button_spacing),
+                    start_y_screens + i * (button_height + button_spacing),
                     button_width,
                     button_height,
                     button_text
                 )
                 size_buttons_with_keys.append((button, size_name, key))
             
+            # Calculate starting Y position for volume settings, below screen size settings
+            start_y_volumes = start_y_screens + len(SCREEN_SIZES) * (button_height + button_spacing) + 50 # Add extra space
+            
+            # Volume control display
+            master_vol_text = self.font.render(f"Master Volume: {int(self.settings.master_volume * 100)}% (+/- Numpad)", True, BLACK)
+            music_vol_text = self.font.render(f"Music Volume: {int(self.settings.music_volume * 100)}% (Up/Down Arrows)", True, BLACK)
+            sfx_vol_text = self.font.render(f"SFX Volume: {int(self.settings.sfx_volume * 100)}% (Left/Right Arrows)", True, BLACK)
+            
+            # Position volume texts
+            master_vol_rect = master_vol_text.get_rect(center=(screen_width//2, start_y_volumes))
+            music_vol_rect = music_vol_text.get_rect(center=(screen_width//2, start_y_volumes + 40))
+            sfx_vol_rect = sfx_vol_text.get_rect(center=(screen_width//2, start_y_volumes + 80))
+
             KEY_BACK = pygame.K_ESCAPE # Assign ESC key for back
             back_button = Button(
                 screen_width//2 - button_width//2,
-                start_y + len(SCREEN_SIZES) * (button_height + button_spacing),
+                start_y_volumes + 120 + button_spacing, # Position below volume texts
                 button_width,
                 button_height,
                 "Back (ESC)" # Added key hint
@@ -786,12 +844,18 @@ class Game:
             
             title_font = pygame.font.Font(None, 72)
             title_text = title_font.render("Settings", True, BLACK)
-            title_rect = title_text.get_rect(center=(screen_width//2, 150))
+            title_rect = title_text.get_rect(center=(screen_width//2, 100)) # Move title up slightly
             
             self.screen.fill(MARIO_SKY_BLUE)
             self.screen.blit(title_text, title_rect)
+            
             for button, _, _ in size_buttons_with_keys:
                 button.draw(self.screen)
+            
+            self.screen.blit(master_vol_text, master_vol_rect)
+            self.screen.blit(music_vol_text, music_vol_rect)
+            self.screen.blit(sfx_vol_text, sfx_vol_rect)
+            
             back_button.draw(self.screen)
             pygame.display.flip()
             
@@ -804,17 +868,41 @@ class Game:
                     if event.key == KEY_BACK:
                         return # Exit settings menu on ESC
                     
+                    # Handle screen size selection
                     for button, size_name, key in size_buttons_with_keys:
                         if event.key == key:
                             self.screen = self.settings.apply_screen_size(size_name)
                             # After changing screen size, the current loop iteration will
                             # redraw buttons with new dimensions.
                             break # Exit inner loop once a button is handled
+                    
+                    # Handle volume control
+                    volume_change_amount = 0.05 # 5% increment/decrement
+                    
+                    if event.key == KEY_MASTER_VOL_UP:
+                        self.settings.set_master_volume(self.settings.master_volume + volume_change_amount)
+                        self.game_sounds.apply_volumes()
+                    elif event.key == KEY_MASTER_VOL_DOWN:
+                        self.settings.set_master_volume(self.settings.master_volume - volume_change_amount)
+                        self.game_sounds.apply_volumes()
+                    elif event.key == KEY_MUSIC_VOL_UP:
+                        self.settings.set_music_volume(self.settings.music_volume + volume_change_amount)
+                        self.game_sounds.apply_volumes()
+                    elif event.key == KEY_MUSIC_VOL_DOWN:
+                        self.settings.set_music_volume(self.settings.music_volume - volume_change_amount)
+                        self.game_sounds.apply_volumes()
+                    elif event.key == KEY_SFX_VOL_UP:
+                        self.settings.set_sfx_volume(self.settings.sfx_volume + volume_change_amount)
+                        self.game_sounds.apply_volumes()
+                    elif event.key == KEY_SFX_VOL_DOWN:
+                        self.settings.set_sfx_volume(self.settings.sfx_volume - volume_change_amount)
+                        self.game_sounds.apply_volumes()
                 
                 # Keep existing mouse hover functionality for visual feedback if desired
                 for button, _, _ in size_buttons_with_keys:
                     button.handle_event(event)
                 back_button.handle_event(event)
+
     def show_main_menu(self):
         """
         Displays the main menu with options to start the game, go to settings, or quit.
@@ -889,6 +977,8 @@ class Game:
                         return  # Start the game, exit menu loop
                     elif event.key == KEY_SETTINGS:
                         self.show_settings_menu()  # Show settings menu, then return here
+                        self.game_sounds.apply_volumes() # Apply any changed volumes immediately
+                        self.game_sounds.play_music() # Ensure music continues after returning from settings
                     elif event.key == KEY_QUIT:
                         self.running = False
                         pygame.quit()
