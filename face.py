@@ -196,6 +196,8 @@ class EmotionDetector:
         self.face_cascade = None
         self.labels = {0: 'angry', 1: 'disgust', 2: 'fear', 3: 'happy', 
                        4: 'neutral', 5: 'sad', 6: 'surprise'}
+        self.latest_display_frame = None  # For storing the frame to be displayed in Pygame
+        self.frame_lock = threading.Lock() # For thread-safe access to latest_display_frame
         self.setup_model()
         self.setup_camera()
         
@@ -242,52 +244,59 @@ class EmotionDetector:
     def detect_emotion(self):
         """
         Captures a frame from the webcam, detects faces, predicts emotion,
-        and updates `self.current_emotion`. Displays the camera feed.
+        and updates `self.current_emotion`. Stores the processed frame for Pygame display.
         """
-        # If model or webcam not available, return the current emotion (likely 'neutral' or keyboard-set)
         if not self.model or not self.webcam:
-            self.face_detected = False # No face detected if system not active
+            self.face_detected = False
+            with self.frame_lock: # Ensure thread-safe update
+                self.latest_display_frame = None
             return self.current_emotion
             
+        processed_frame_for_display = None # Initialize here
         try:
             ret, frame = self.webcam.read()
-            if not ret: # If frame couldn't be read
+            if not ret: 
                 self.face_detected = False
-                self.current_emotion = 'neutral' # Reset emotion if camera fails
+                self.current_emotion = 'neutral'
+                with self.frame_lock: # Ensure thread-safe update
+                    self.latest_display_frame = None
                 return self.current_emotion
-                
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) # Convert to grayscale
-            faces = self.face_cascade.detectMultiScale(gray, 1.3, 5) # Detect faces
             
-            # Process only the first detected face for simplicity
+            display_frame = frame.copy() # Work on a copy for drawing
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) 
+            faces = self.face_cascade.detectMultiScale(gray, 1.3, 5) 
+            
             if len(faces) > 0:
-                self.face_detected = True # Face detected!
-                (x, y, w, h) = faces[0] # Get coordinates of the first face
-                face_img = gray[y:y+h, x:x+w] # Extract face region
-                cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2) # Draw rectangle around face
+                self.face_detected = True 
+                (x, y, w, h) = faces[0] 
+                face_img = gray[y:y+h, x:x+w] 
+                cv2.rectangle(display_frame, (x, y), (x+w, y+h), (255, 0, 0), 2) # Draw on display_frame
                 
-                face_img = cv2.resize(face_img, (48, 48)) # Resize face image to 48x48 for model
-                img_features = self.extract_features(face_img)
-                prediction = self.model.predict(img_features, verbose=0) # Predict emotion
-                emotion_label = self.labels[prediction.argmax()] # Get emotion label with highest probability
+                face_img_resized = cv2.resize(face_img, (48, 48)) 
+                img_features = self.extract_features(face_img_resized)
+                prediction = self.model.predict(img_features, verbose=0) 
+                emotion_label = self.labels[prediction.argmax()] 
                 
-                cv2.putText(frame, emotion_label, (x-10, y-10), # Display emotion on frame
+                cv2.putText(display_frame, emotion_label, (x-10, y-10), 
                            cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0))
                 
-                self.current_emotion = emotion_label # Update current emotion
+                self.current_emotion = emotion_label 
             else:
-                self.face_detected = False # No face detected
-                self.current_emotion = 'neutral' # Stop character if no face is detected
+                self.face_detected = False 
+                self.current_emotion = 'neutral' 
             
-            # Resize frame for displaying in a small OpenCV window
-            small_frame = cv2.resize(frame, (200, 150))
-            cv2.imshow("Emotion", small_frame) # Show the frame
-            cv2.waitKey(1) # Wait for a short period to allow window updates
-            
+            # Resize the (potentially annotated) frame for display
+            processed_frame_for_display = cv2.resize(display_frame, (200, 150))
+
         except Exception as e:
             print(f"Error in emotion detection: {e}")
-            self.face_detected = False # Assume no face if error occurs
-            self.current_emotion = 'neutral' # Stop character if error occurs
+            self.face_detected = False 
+            self.current_emotion = 'neutral' 
+            processed_frame_for_display = None # Ensure it's None on error
+        
+        # Store the frame for Pygame to pick up, under lock
+        with self.frame_lock:
+            self.latest_display_frame = processed_frame_for_display
         
         return self.current_emotion
 
@@ -1107,9 +1116,16 @@ class Game:
         while the game is running.
         """
         while self.running:
-            self.emotion_detector.detect_emotion()
-            # Removed time.sleep(0.1) to allow for faster emotion updates.
-            # OpenCV's waitKey(1) already provides a small delay.
+            if self.emotion_detector.model and self.emotion_detector.webcam:
+                self.emotion_detector.detect_emotion()
+                # This waitKey is crucial for OpenCV to process frames from camera
+                # and also for any OpenCV windows if they were used for debugging.
+                if cv2.waitKey(1) & 0xFF == ord('q'): # Allows closing debug windows with 'q'
+                    # This is mostly for debugging if you re-enable cv2.imshow somewhere
+                    pass 
+            else:
+                # If webcam/model isn't active, prevent fast spinning
+                time.sleep(0.1) 
     
     def handle_keyboard_controls(self):
         """
@@ -1359,7 +1375,13 @@ class Game:
         # FPS Counter
         fps = int(self.clock.get_fps()) #
         fps_text_surf = self.small_font.render(f"FPS: {fps}", True, BLACK) #
-        self.screen.blit(fps_text_surf, (current_screen_width - fps_text_surf.get_width() - 10, 10)) #
+        # Position FPS counter next to camera feed if camera feed is on top right, otherwise top right.
+        camera_feed_width_check = 200 # Expected width of camera feed
+        fps_x_pos = current_screen_width - fps_text_surf.get_width() - 10
+        if self.emotion_detector.model and self.emotion_detector.webcam:
+             fps_x_pos = current_screen_width - camera_feed_width_check - fps_text_surf.get_width() - 20 # Adjust if cam feed is there
+
+        self.screen.blit(fps_text_surf, (fps_x_pos, 10)) #
 
 
         # Grow-Up Status and Cooldown Bar
@@ -1408,6 +1430,51 @@ class Game:
                 instruction_text2_surf = self.small_font.render("Show emotions to control!", True, BLACK) #
             self.screen.blit(instruction_text2_surf, (10, instruction_y_start)) #
 
+
+        # --- Draw Camera Feed ---
+        if self.emotion_detector.model and self.emotion_detector.webcam:
+            frame_to_display = None
+            # Safely get the latest frame
+            with self.emotion_detector.frame_lock:
+                if self.emotion_detector.latest_display_frame is not None:
+                    frame_to_display = self.emotion_detector.latest_display_frame.copy() # Make a copy to work on
+            
+            if frame_to_display is not None:
+                try:
+                    # OpenCV frame is BGR, Pygame needs RGB.
+                    frame_rgb = cv2.cvtColor(frame_to_display, cv2.COLOR_BGR2RGB)
+                    
+                    # OpenCV frame is (height, width, channels). Pygame surfarray needs (width, height, channels).
+                    frame_rgb_transposed = frame_rgb.transpose([1, 0, 2])
+                    
+                    # Create Pygame surface.
+                    camera_surface = pygame.surfarray.make_surface(frame_rgb_transposed)
+                    
+                    # Optional: Flip if the camera image is mirrored (common for selfie view)
+                    # camera_surface = pygame.transform.flip(camera_surface, True, False) 
+
+                    # Position for the camera feed (e.g., top-right corner)
+                    camera_feed_width = camera_surface.get_width()   # Should be 200
+                    camera_feed_height = camera_surface.get_height() # Should be 150
+                    
+                    cam_x = current_screen_width - camera_feed_width - 10  # 10px padding
+                    cam_y = 10  # 10px padding
+                    
+                    self.screen.blit(camera_surface, (cam_x, cam_y))
+                    
+                    # Draw a border around the camera feed
+                    pygame.draw.rect(self.screen, BLACK, (cam_x - 2, cam_y - 2, camera_feed_width + 4, camera_feed_height + 4), 2)
+
+                except Exception as e:
+                    print(f"Error displaying camera feed: {e}")
+                    # Optionally, draw a placeholder if processing fails
+                    cam_x_err = current_screen_width - 200 - 10 
+                    cam_y_err = 10
+                    pygame.draw.rect(self.screen, (70,70,70), (cam_x_err, cam_y_err, 200, 150))
+                    err_text_surf = self.small_font.render("Cam Error", True, WHITE)
+                    self.screen.blit(err_text_surf, (cam_x_err + 10, cam_y_err + 10))
+
+
         if self.game_over: #
             overlay = pygame.Surface((current_screen_width, current_screen_height)) #
             overlay.set_alpha(180) # Semi-transparent overlay #
@@ -1431,9 +1498,14 @@ class Game:
         """Resets all game elements to their initial state for a new game."""
         self.player = Player(100, 300)
         # Reset initial platforms for a fresh start
-        self.platforms = [Platform(0, SCREEN_HEIGHT - 50, SCREEN_WIDTH * 2)]
-        self.platforms.append(Platform(SCREEN_WIDTH * 0.8, SCREEN_HEIGHT - 150, 150))
-        self.platforms.append(Platform(SCREEN_WIDTH * 1.2, SCREEN_HEIGHT - 250, 200))
+        # Get current screen dimensions for platform reset
+        current_screen_width_val = self.screen.get_width()
+        current_screen_height_val = self.screen.get_height()
+
+        self.platforms = [Platform(0, current_screen_height_val - 50, current_screen_width_val * 2)]
+        self.platforms.append(Platform(current_screen_width_val * 0.8, current_screen_height_val - 150, 150))
+        self.platforms.append(Platform(current_screen_width_val * 1.2, current_screen_height_val - 250, 200))
+
 
         self.obstacles = []
         self.collectibles = []
@@ -1462,30 +1534,47 @@ class Game:
                 if event.type == pygame.QUIT:
                     self.running = False # Set running to False to exit game loop
                 elif event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_ESCAPE:
-                        self.running = False # Quit game on ESC
-                    elif event.key == pygame.K_r and self.game_over:
-                        self.restart_game() # Restart game on 'R' key press if game over
-                    elif event.key == pygame.K_p and not self.game_over:
-                        self.paused = not self.paused # Toggle pause with P key
-                        if self.paused:
-                            pygame.mixer.music.pause() # Pause music when game is paused
-                        else:
-                            pygame.mixer.music.unpause() # Unpause music when game resumes
+                    if self.game_over: # Only these keys active if game over
+                        if event.key == pygame.K_ESCAPE:
+                            self.running = False 
+                        elif event.key == pygame.K_r:
+                            self.restart_game()
+                    elif self.paused: # Only these keys active if paused
+                         if event.key == pygame.K_p:
+                            self.paused = not self.paused 
+                            if not self.paused:
+                                pygame.mixer.music.unpause()
+                         elif event.key == pygame.K_ESCAPE: # Back to main menu from pause
+                            self.paused = False # Unpause first
+                            pygame.mixer.music.unpause() # Ensure music is unpaused
+                            self.game_sounds.stop_music() # Stop game music
+                            self.show_main_menu() # Show main menu
+                            self.game_sounds.play_music() # Start menu music (or game music if game is started again)
+                    else: # Keys active during gameplay
+                        if event.key == pygame.K_ESCAPE: # Back to main menu from gameplay (via pause)
+                            self.paused = True
+                            pygame.mixer.music.pause()
+                            # The pause menu will handle going back to main menu
+                        elif event.key == pygame.K_p: # Toggle pause
+                            self.paused = not self.paused
+                            if self.paused:
+                                pygame.mixer.music.pause() 
+                            else:
+                                pygame.mixer.music.unpause()
             
             # Only update game logic if not paused and not game over
             if not self.paused and not self.game_over:
-                self.update() # Update game logic
+                self.update() 
             
-            self.draw() # Redraw game elements (including pause/game over overlays if active)
-            self.clock.tick(FPS) # Control game speed to target FPS
+            self.draw() 
+            self.clock.tick(FPS) 
         
         # Cleanup: release webcam and destroy OpenCV windows when game loop exits
         if hasattr(self.emotion_detector, 'webcam') and self.emotion_detector.webcam:
             self.emotion_detector.webcam.release()
         cv2.destroyAllWindows()
-        pygame.quit() # Uninitialize Pygame modules
-        sys.exit() # Exit the program
+        pygame.quit() 
+        sys.exit() 
 
 if __name__ == "__main__":
     game = Game()
