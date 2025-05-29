@@ -1210,34 +1210,67 @@ class Game:
     def check_collisions(self):
         """
         Checks for collisions between the player and obstacles/collectibles.
-        Returns False if player collides with an obstacle (game over),
-        unless the player is grown up, in which case the obstacle is removed.
+        Handles stomping non-moving enemies, grown-up player defeating enemies,
+        and collecting items. Returns False if a fatal collision occurs.
         """
         player_rect = pygame.Rect(self.player.x, self.player.y, self.player.width, self.player.height)
         
         # Check obstacle collisions
-        for obstacle in self.obstacles[:]: # Iterate over a copy to allow safe removal
-            obstacle_rect = pygame.Rect(obstacle.x, obstacle.y, obstacle.width, obstacle.height)
-            if player_rect.colliderect(obstacle_rect):
-                if self.player.is_grown_up:
-                    self.obstacles.remove(obstacle) # Remove obstacle if player is grown up
-                    self.score += 50 # Reward for defeating an enemy
-                    self.game_sounds.play_stomp_sound() # Play stomp sound
-                    print("Enemy defeated!")
-                else:
-                    self.game_sounds.play_game_over_sound() # Play game over sound
-                    return False # Game over if collides with obstacle and not grown up
-        
-        # Check collectible collisions
         # Iterate over a copy of the list to safely remove items during iteration
+        for obstacle in self.obstacles[:]: 
+            obstacle_rect = pygame.Rect(obstacle.x, obstacle.y, obstacle.width, obstacle.height)
+            
+            if player_rect.colliderect(obstacle_rect):
+                # Stomp Condition for Non-Moving Obstacles:
+                # 1. Player is falling (self.player.vel_y > 0).
+                # 2. The obstacle is a non-moving type (Obstacle, not MovingObstacle).
+                # 3. Player's feet are colliding with the top portion of the obstacle.
+                
+                # Player's feet must land within the top X% of the enemy's height.
+                # e.g., if enemy height is 30, top 40% is 12 pixels.
+                # This means player_rect.bottom should be between obstacle_rect.top and obstacle_rect.top + 12.
+                stomp_effective_height = obstacle_rect.height * 0.4 
+
+                is_stomp = (isinstance(obstacle, Obstacle) and
+                            not isinstance(obstacle, MovingObstacle) and # Ensures it's the base Obstacle, not a MovingObstacle
+                            self.player.vel_y > 0 and
+                            player_rect.bottom > obstacle_rect.top and  # Player's feet are below the very top of obstacle (i.e. intersecting)
+                            player_rect.bottom < obstacle_rect.top + stomp_effective_height) # Player's feet are within the 'stompable' top area
+
+                if is_stomp:
+                    self.obstacles.remove(obstacle)
+                    self.score += 25 # Score for stomping a non-moving enemy
+                    if self.game_sounds:
+                        self.game_sounds.play_stomp_sound()
+                    
+                    # Give player a small bounce
+                    self.player.vel_y = -7  # Negative value for upward movement; JUMP_STRENGTH is -15 for comparison
+                    self.player.on_ground = False # Player is now airborne from the bounce
+                    # Note: This bounce does not reset or consume the player's regular jump counts (e.g., double jump)
+                    print("Non-moving enemy stomped!")
+                
+                elif self.player.is_grown_up: # If not a stomp, but player is grown up (this can defeat any obstacle type)
+                    self.obstacles.remove(obstacle)
+                    self.score += 50 # Score for defeating an enemy while grown up
+                    if self.game_sounds:
+                        self.game_sounds.play_stomp_sound() # Or a different "power defeat" sound could be used
+                    print("Enemy defeated by grown-up player!")
+                
+                else: # Collision without a successful stomp or grow-up power (fatal for any obstacle type)
+                    if self.game_sounds:
+                        self.game_sounds.play_game_over_sound()
+                    return False # Game over
+        
+        # Check collectible collisions (this part remains the same)
         for collectible in self.collectibles[:]: 
             collectible_rect = pygame.Rect(collectible.x, collectible.y, collectible.width, collectible.height)
             if player_rect.colliderect(collectible_rect):
-                self.collectibles.remove(collectible) # Remove collected item
-                self.score += 10 # Increase score
-                self.game_sounds.play_coin_sound() # Play coin sound
+                self.collectibles.remove(collectible)
+                self.score += 10
+                if self.game_sounds:
+                    self.game_sounds.play_coin_sound()
         
-        return True # No fatal collisions
+        return True # No fatal collisions, or all collisions were handled (stomp, grow-up power, collectible)
     
     def update(self):
         """
