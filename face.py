@@ -267,17 +267,38 @@ class Player:
         self.jump_count = 0
         self.max_jumps = 2
         self.last_emotion = 'neutral'  # Track last emotion to prevent continuous jumping
+        
+        # New attributes for Grow Up skill
+        self.is_grown_up = False
+        self.grow_up_start_time = 0
+        self.grow_up_duration = 10 # seconds
+        self.last_grow_up_time = -30 # Initialize to allow immediate use
+        self.grow_up_cooldown = 30 # seconds
+        
+        # Original dimensions
+        self.original_width = 30
+        self.original_height = 40
     
     def update(self, emotion, platforms, face_detected_status=True): # Added face_detected_status parameter
         """
         Updates player's position and state based on emotion and platform collisions.
         Returns False if the player falls off the screen (game over).
         """
+        current_time = time.time()
+        
+        # Manage grow up state
+        if self.is_grown_up:
+            if current_time - self.grow_up_start_time > self.grow_up_duration:
+                self.is_grown_up = False
+                self.width = self.original_width
+                self.height = self.original_height
+                print("Player shrunk back to normal.")
+        
         # If emotion detection is active and no face is detected, stop horizontal movement
         if not face_detected_status:
             self.vel_x = 0
         else:
-            # Handle emotion-based horizontal movement
+            # Handle emotion-based horizontal movement and skill activation
             if emotion == 'neutral':
                 self.vel_x = 0
             elif emotion == 'happy':
@@ -291,6 +312,15 @@ class Player:
                     self.on_ground = False # Player is no longer on ground after jumping
             elif emotion == 'sad':
                 self.vel_x = -PLAYER_SPEED
+            elif emotion == 'angry':
+                # Activate grow up skill if not already grown up and cooldown is ready
+                if not self.is_grown_up and (current_time - self.last_grow_up_time) >= self.grow_up_cooldown:
+                    self.is_grown_up = True
+                    self.grow_up_start_time = current_time
+                    self.last_grow_up_time = current_time # Reset cooldown from activation
+                    self.width = int(self.original_width * 1.5) # Increase size
+                    self.height = int(self.original_height * 1.5) # Increase size
+                    print("Player grew up! Can now stomp enemies.")
         
         self.last_emotion = emotion # Store current emotion for next frame's comparison
         
@@ -324,22 +354,30 @@ class Player:
     
     def draw(self, screen):
         """Draws the Mario-like player character on the screen."""
+        current_width = self.width
+        current_height = self.height
+        
+        # Adjust colors if grown up
+        body_color = MARIO_BLUE if not self.is_grown_up else (100, 100, 255) # Lighter blue for grown up
+        shirt_color = MARIO_RED if not self.is_grown_up else (255, 100, 100) # Lighter red for grown up
+
         # Body (Overalls - Blue)
-        pygame.draw.rect(screen, MARIO_BLUE, (self.x + 5, self.y + 15, self.width - 10, self.height - 15), border_radius=3)
+        pygame.draw.rect(screen, body_color, (self.x + current_width * 0.15, self.y + current_height * 0.375, current_width * 0.7, current_height * 0.625), border_radius=int(current_width * 0.1))
         # Shirt (Red)
-        pygame.draw.rect(screen, MARIO_RED, (self.x, self.y + 10, self.width, self.height - 20), border_radius=3)
+        pygame.draw.rect(screen, shirt_color, (self.x, self.y + current_height * 0.25, current_width, current_height * 0.5), border_radius=int(current_width * 0.1))
         # Head (Skin color)
-        pygame.draw.circle(screen, MARIO_SKIN, (int(self.x + self.width//2), int(self.y + 8)), 10)
+        pygame.draw.circle(screen, MARIO_SKIN, (int(self.x + current_width//2), int(self.y + current_height * 0.2)), int(current_width * 0.25))
         # Hat (Red)
-        pygame.draw.rect(screen, MARIO_RED, (self.x + 2, self.y, self.width - 4, 10), border_radius=3)
-        pygame.draw.rect(screen, MARIO_RED, (self.x - 5, self.y + 5, 15, 5), border_radius=2) # Hat brim
+        pygame.draw.rect(screen, shirt_color, (self.x + current_width * 0.05, self.y, current_width * 0.9, current_height * 0.25), border_radius=int(current_width * 0.1))
+        pygame.draw.rect(screen, shirt_color, (self.x - current_width * 0.15, self.y + current_height * 0.125, current_width * 0.35, current_height * 0.125), border_radius=int(current_width * 0.05)) # Hat brim
         # Eyes (Black)
-        pygame.draw.circle(screen, BLACK, (int(self.x + self.width//2 - 4), int(self.y + 7)), 2)
-        pygame.draw.circle(screen, BLACK, (int(self.x + self.width//2 + 4), int(self.y + 7)), 2)
+        pygame.draw.circle(screen, BLACK, (int(self.x + current_width * 0.3), int(self.y + current_height * 0.175)), int(current_width * 0.075))
+        pygame.draw.circle(screen, BLACK, (int(self.x + current_width * 0.7), int(self.y + current_height * 0.175)), int(current_width * 0.075))
         # Mustache (Brown)
-        pygame.draw.line(screen, MARIO_GROUND_BROWN, (self.x + self.width//2 - 5, self.y + 12), (self.x + self.width//2 + 5, self.y + 12), 2)
+        pygame.draw.line(screen, MARIO_GROUND_BROWN, (self.x + current_width * 0.3, self.y + current_height * 0.3), (self.x + current_width * 0.7, self.y + current_height * 0.3), int(current_width * 0.075))
         # Shoes (Brown)
-        pygame.draw.rect(screen, MARIO_GROUND_BROWN, (self.x + 2, self.y + self.height - 5, self.width - 4, 5), border_radius=2)
+        pygame.draw.rect(screen, MARIO_GROUND_BROWN, (self.x + current_width * 0.05, self.y + current_height - current_height * 0.125, current_width * 0.9, current_height * 0.125), border_radius=int(current_width * 0.05))
+
 
 class Platform:
     """
@@ -789,6 +827,8 @@ class Game:
             self.emotion_detector.current_emotion = 'happy' # Maps to move forward
         elif keys[pygame.K_LEFT] or keys[pygame.K_a]:
             self.emotion_detector.current_emotion = 'sad' # Maps to move backward
+        elif keys[pygame.K_RETURN]: # Use Enter for 'angry' (grow up)
+            self.emotion_detector.current_emotion = 'angry'
         else:
             self.emotion_detector.current_emotion = 'neutral' # Maps to stop
         # If using keyboard, assume a 'face' is always detected for movement purposes.
@@ -850,15 +890,21 @@ class Game:
     def check_collisions(self):
         """
         Checks for collisions between the player and obstacles/collectibles.
-        Returns False if player collides with an obstacle (game over).
+        Returns False if player collides with an obstacle (game over),
+        unless the player is grown up, in which case the obstacle is removed.
         """
         player_rect = pygame.Rect(self.player.x, self.player.y, self.player.width, self.player.height)
         
         # Check obstacle collisions
-        for obstacle in self.obstacles:
+        for obstacle in self.obstacles[:]: # Iterate over a copy to allow safe removal
             obstacle_rect = pygame.Rect(obstacle.x, obstacle.y, obstacle.width, obstacle.height)
             if player_rect.colliderect(obstacle_rect):
-                return False # Game over if collides with obstacle
+                if self.player.is_grown_up:
+                    self.obstacles.remove(obstacle) # Remove obstacle if player is grown up
+                    self.score += 50 # Reward for defeating an enemy
+                    print("Enemy defeated!")
+                else:
+                    return False # Game over if collides with obstacle and not grown up
         
         # Check collectible collisions
         # Iterate over a copy of the list to safely remove items during iteration
@@ -879,7 +925,6 @@ class Game:
             return # Do nothing if game is over
         
         # Handle keyboard as backup if emotion detection is not active
-        # Or if emotion detection is active but no face is detected
         if not self.emotion_detector.model or not self.emotion_detector.webcam:
             self.handle_keyboard_controls()
         
@@ -1008,12 +1053,26 @@ class Game:
         self.screen.blit(score_text, (10, 35))
         self.screen.blit(distance_text, (10, 65))
         
+        # Display grow-up status and cooldown
+        if self.player.is_grown_up:
+            remaining_time = max(0, int(self.player.grow_up_duration - (time.time() - self.player.grow_up_start_time)))
+            grow_up_status_text = self.small_font.render(f"GROW UP! ({remaining_time}s remaining)", True, MARIO_RED)
+            self.screen.blit(grow_up_status_text, (SCREEN_WIDTH // 2 - grow_up_status_text.get_width() // 2, 10))
+        else:
+            cooldown_remaining = max(0, int(self.player.grow_up_cooldown - (time.time() - self.player.last_grow_up_time)))
+            if cooldown_remaining > 0:
+                cooldown_text = self.small_font.render(f"Grow Up Cooldown: {cooldown_remaining}s", True, BLACK)
+            else:
+                cooldown_text = self.small_font.render("Grow Up Ready!", True, MARIO_GROUND_TOP_GREEN)
+            self.screen.blit(cooldown_text, (SCREEN_WIDTH // 2 - cooldown_text.get_width() // 2, 10))
+
+
         # Draw instructions based on control method
         if not self.emotion_detector.model or not self.emotion_detector.webcam:
-            instruction_text = self.small_font.render("SPACE: Jump, RIGHT/D: Move Forward, LEFT/A: Move Backward, P: Pause, Others: Stop", True, BLACK)
+            instruction_text = self.small_font.render("SPACE: Jump, RIGHT/D: Move Forward, LEFT/A: Move Backward, ENTER: Grow Up, P: Pause, Others: Stop", True, BLACK)
             self.screen.blit(instruction_text, (10, SCREEN_HEIGHT - 30))
         else:
-            instruction_text1 = self.small_font.render("NEUTRAL: Stop, HAPPY: Move Forward, SURPRISE: Jump, SAD: Move Backward, P: Pause", True, BLACK)
+            instruction_text1 = self.small_font.render("NEUTRAL: Stop, HAPPY: Move Forward, SURPRISE: Jump, SAD: Move Backward, ANGRY: Grow Up, P: Pause", True, BLACK)
             self.screen.blit(instruction_text1, (10, SCREEN_HEIGHT - 50))
             if not self.emotion_detector.face_detected:
                 instruction_text2 = self.small_font.render("NO FACE DETECTED - Character Stopped! Please look at the camera.", True, MARIO_RED)
