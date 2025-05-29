@@ -11,6 +11,8 @@ import json
 import os
 
 # Initialize Pygame
+# ADD THIS LINE BEFORE pygame.init() FOR BETTER SOUND STABILITY, ESPECIALLY ON MACOS
+pygame.mixer.pre_init(44100, -16, 2, 1024) # Frequency, size, channels, buffer (adjust buffer if needed)
 pygame.init()
 pygame.mixer.init() # Initialize the mixer for sounds
 
